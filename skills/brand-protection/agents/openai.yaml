@@ -1,0 +1,4 @@
+interface:
+  display_name: "品牌维权与仿冒处置"
+  short_description: "按品牌与市场准备维权申诉，并持续核查反馈、催办逾期案件及跟进处理结果"
+  default_prompt: "使用 $brand-protection 读取我的品牌、市场和资料，准备维权材料，并按已授权范围持续检查反馈、催办和升级未结事项。"

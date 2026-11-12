@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "purpose": "Operational defaults for an explicitly requested follow-up workflow; never a legal deadline or provider SLA",
+  "timezone": null,
+  "feedback_check_interval_hours": 6,
+  "target_check_interval_hours": 24,
+  "unconfirmed_receipt_check_after_hours": 24,
+  "first_reminder_after_confirmed_delivery_hours": 72,
+  "subsequent_reminder_min_interval_hours": 168,
+  "unanswered_reminders_before_route_review": 2,
+  "post_action_recheck_after_hours": [24, 168],
+  "recurrence_check_interval_hours": 168,
+  "channel_policy_overrides_required": true,
+  "fresh_feedback_check_before_sending": true,
+  "automatic_resubmit_on_silence": false,
+  "automatic_case_closure_on_silence": false,
+  "send_permissions": null
+}
