@@ -8,7 +8,9 @@
 
 Skill 保存工作方法、模板和只读辅助脚本。调查、反馈读取、提交与定时唤醒依赖运行环境提供的工具及用户授权。它本身不是后台服务，也不包含自动群发投诉程序。
 
-[贡献指南](CONTRIBUTING.md) · [使用与支持](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md) · [变更记录](CHANGELOG.md) · [反馈问题](https://github.com/zlxmygit/brand-protection-skills/issues/new/choose)
+[贡献指南](CONTRIBUTING.md) · [使用与支持](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md) · [变更记录](CHANGELOG.md) · [MIT 许可证](LICENSE) · [反馈问题](https://github.com/zlxmygit/brand-protection-skills/issues/new/choose)
+
+本项目采用 [MIT License](LICENSE)，版权署名为 `Copyright (c) 2026 zlxmygit`。允许商用、修改和分发，需保留版权及许可声明；完整条款以许可证正文为准。Skill 文件夹内也附带同一许可证，便于单独安装和分发。用户的私有品牌材料及案件记录不属于本仓库的许可交付物。
 
 ## 内容导航
 
@@ -234,6 +236,7 @@ python3 skills/brand-protection/scripts/followup_queue.py \
 ```text
 brand-protection-skills/
 ├── README.md
+├── LICENSE
 ├── CONTRIBUTING.md
 ├── SUPPORT.md
 ├── SECURITY.md
@@ -246,9 +249,11 @@ brand-protection-skills/
 │   │   ├── feature_request.yml
 │   │   ├── channel_update.yml
 │   │   └── config.yml
-│   └── PULL_REQUEST_TEMPLATE.md
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/tests.yml
 ├── skills/brand-protection/
 │   ├── SKILL.md
+│   ├── LICENSE
 │   ├── agents/openai.yaml
 │   ├── assets/
 │   │   ├── intake-form.md
@@ -263,9 +268,14 @@ brand-protection-skills/
 │   │   ├── legal-regions.md
 │   │   ├── patents-designs.md
 │   │   ├── follow-up.md
-│   │   └── case-format.md
+│   │   ├── case-format.md
+│   │   └── queue-safety.md
 │   └── scripts/followup_queue.py
-└── tests/test_followup_queue.py
+└── tests/
+    ├── test_followup_queue.py
+    ├── test_audit_regressions.py
+    ├── test_queue_hardening.py
+    └── test_queue_mutations.py
 ```
 
 | 入口 | 什么时候读取 |
@@ -278,6 +288,7 @@ brand-protection-skills/
 | [专利与外观设计](skills/brand-protection/references/patents-designs.md) | 技术/设计权利与产品对照及专项分流 |
 | [持续跟进](skills/brand-protection/references/follow-up.md) | 恢复、反馈、发送、补救、调度与结案 |
 | [案件格式](skills/brand-protection/references/case-format.md) | 数据字段、队列输出与旧记录迁移 |
+| [队列安全契约](skills/brand-protection/references/queue-safety.md) | 审计修复的输入校验、关联、去重及兼容性约束 |
 | [投诉模板](skills/brand-protection/assets/complaint-templates.md) | 逐渠道草稿、催办、升级及更正/撤回 |
 
 ## 验证与维护
@@ -288,7 +299,9 @@ brand-protection-skills/
 python3 -m unittest discover -s tests -v
 ```
 
-本次发布基线在 Python 3.9.6 下通过 **38 项测试**，覆盖坏记录隔离、补证优先级、真实全外发限制、未决发送与去重、运行恢复、更正行动、覆盖缺口、时区/时间边界、多案隔离及输入不变性。另完成 3 组合成场景走读：未决发送与紧急补证并存、已关闭案件的逐渠道更正、英国扣留与权利地域缺口。
+当前版本在 Python 3.9.6 下通过 **76 项本地测试**，保留最初 38 项回归，并加入审计反例、组合与顺序检查、严格输入处理及包含 1,120 次字段变异的测试。覆盖坏记录隔离、补证优先级、外发限制、未决发送与去重、运行恢复、更正行动、覆盖缺口、时区/时间边界、多案隔离及输入不变性。首次公开基线另完成 3 组合成场景走读：未决发送与紧急补证并存、已关闭案件的逐渠道更正、英国扣留与权利地域缺口。
+
+[CI 配置](.github/workflows/tests.yml)覆盖 Linux 多个 Python 版本与 Windows；各次提交的实际状态以 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions) 为准。
 
 上述验证针对本地脚本、规则和模板，不证明真实邮箱读取、外部提交、自然调度、独立健康观察或机构最终处置。接入真实案件时，仍需按对应环境完成实际运行验收。仓库不包含这次演练的案件记录或本机审计报告。
 
