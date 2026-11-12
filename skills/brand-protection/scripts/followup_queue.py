@@ -113,9 +113,89 @@ def recover_claim(task, runs, now, result):
     return 'run_review_required'
 
 
+def id_list(value, label, allow_empty=False):
+    """Validate an explicit scope; missing and empty are never interchangeable."""
+    if (not isinstance(value, list) or (not value and not allow_empty)
+            or not all(identifier(item) for item in value)):
+        raise ValueError(f'{label}: expected {"a" if allow_empty else "a non-empty"} list of ids')
+    if len(set(value)) != len(value):
+        raise ValueError(f'{label}: duplicate ids')
+    return value
+
+
+def correction_groups(actions, result):
+    """Union related notices for delivery barriers, not for authority or freezing."""
+    roots = {key: key for key in actions}
+
+    def root(key):
+        while roots[key] != key:
+            roots[key] = roots[roots[key]]
+            key = roots[key]
+        return key
+
+    for key, action in actions.items():
+        original = action.get('corrects_action_id')
+        if not identifier(original) or original not in actions or original == key:
+            continue  # The action validator reports invalid references.
+        left, right = root(key), root(original)
+        if left == right:
+            error(result, 'actions', 'cyclic corrects_action_id relationship', key)
+        else:
+            roots[left] = right
+    return {key: root(key) for key in actions}
+
+
+def delivery_barriers(tasks, attempts, groups):
+    """Precompute barriers before selection so input ordering cannot grant a send."""
+    claimed = {groups[t['action_id']] for t in tasks.values()
+               if member(t.get('kind'), OUTBOUND) and t.get('status') == 'in_progress'
+               and identifier(t.get('action_id')) and t['action_id'] in groups}
+    pending = {groups[a['action_id']] for a in attempts if a['status'] in PENDING_SEND}
+    used_keys = {a['dedupe_key'] for a in attempts if a['status'] in PENDING_SEND | {'sent'}}
+    counts = Counter(t['dedupe_key'] for t in tasks.values()
+                     if member(t.get('kind'), OUTBOUND)
+                     and not member(t.get('status'), CLOSED_TASKS)
+                     and identifier(t.get('dedupe_key')))
+    collisions = {key for key, count in counts.items() if count > 1}
+    return claimed, pending, used_keys, collisions
+
+
+def linked_deadline(task, deadline):
+    if 'deadline_ids' in task:
+        return deadline['id'] in task['deadline_ids']
+    # Legacy records lack explicit linkage. Keep conservative operational checks,
+    # but post-result observation does not satisfy a pending legal response.
+    return (task['kind'] not in {'check_recurrence', 'verify_effect'}
+            and task.get('action_id') is not None
+            and deadline.get('action_id') == task['action_id'])
+
+
+def unique_object(pairs):
+    """Reject ambiguous JSON before overwritten deadlines/permissions disappear."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f'duplicate JSON member: {key}')
+        result[key] = value
+    return result
+
+
+def finite_number(value):
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError('non-finite JSON number')
+    return parsed
+
+
+def reject_constant(value):
+    raise ValueError(f'non-standard JSON constant: {value}')
+
+
 def coverage(targets, actions, tasks, result, now):
     """Report only recorded scope; never invent channels or declare global coverage."""
     gaps = result['coverage_gaps']
+    available = {t['id'] for t in result['due_tasks'] + result['deferred_tasks']}
+    held = {t['id']: t['reason'] for t in result['held_tasks']}
     for action_id, action in actions.items():
         if member(action.get('status'), TERMINAL_ACTIONS):
             continue
@@ -125,15 +205,14 @@ def coverage(targets, actions, tasks, result, now):
             target_ids = [None]
         for target_id in target_ids:
             match = [t for t in tasks if t.get('action_id') == action_id
-                     and (not t.get('target_ids') or target_id in t['target_ids'])]
+                     and ('target_ids' not in t or target_id in t['target_ids'])]
             covered = False
             for task in match:
-                if task['status'] in {'planned', 'ready'}:
+                if task['id'] in available:
                     covered = True
-                elif task['status'] == 'blocked' and task.get('reason') and task.get('review_at'):
-                    covered = True
-                elif task['status'] == 'in_progress' and any(
-                        h['id'] == task['id'] and h['reason'] == 'in_progress' for h in result['held_tasks']):
+                elif task['status'] == 'blocked' and held.get(task['id']) == 'blocked':
+                    covered = True  # reason/review_at were validated before inclusion.
+                elif task['status'] == 'in_progress' and held.get(task['id']) == 'in_progress':
                     covered = True
             if not covered:
                 gaps.append({'action_id': action_id, 'target_id': target_id,
@@ -186,6 +265,9 @@ def build_queue(case, now, horizon_hours=48):
     if not isinstance(follow, dict):
         error(result, 'follow_up', 'expected an object')
         follow = {}
+    for field in ('requested', 'enabled'):
+        if field in follow and type(follow[field]) is not bool:
+            error(result, 'follow_up', f'{field}: expected a boolean')
     if follow.get('requested') is not True or follow.get('enabled') is not True:
         result['state'] = 'not_enabled'
         return result
@@ -202,10 +284,11 @@ def build_queue(case, now, horizon_hours=48):
 
     # Legal deadlines survive all independent task/attempt validation errors.
     deadlines = []
-    for key, deadline in records(case, 'deadlines', result).items():
+    deadline_map = records(case, 'deadlines', result)
+    for key, deadline in deadline_map.items():
         if member(deadline.get('status'), CLOSED_DEADLINES):
             continue
-        if not deadline.get('due_at'):
+        if deadline.get('due_at') is None:
             result['unresolved_deadlines'].append({'id': key, 'reason': 'due_at_unknown'})
             continue
         try:
@@ -225,8 +308,9 @@ def build_queue(case, now, horizon_hours=48):
     task_map = records(case, 'followup_tasks', result)
     runs = records(case, 'runs', result)
     attempts = records(case, 'outbound_attempts', result)
-    unsafe |= len(result['errors']) > before
     targets = records(case, 'targets', result)
+    unsafe |= len(result['errors']) > before
+    invalid_actions = set()
     for key, action in actions.items():
         if not member(action.get('status'), ACTION_STATES):
             error(result, 'actions', 'unknown action status', key)
@@ -235,6 +319,32 @@ def build_queue(case, now, horizon_hours=48):
         if correction is not None and (not identifier(correction) or correction not in actions or correction == key):
             error(result, 'actions', 'corrects_action_id must reference a different existing action', key)
             unsafe = True
+        try:
+            if 'claim_frozen' in action and type(action['claim_frozen']) is not bool:
+                raise ValueError('claim_frozen must be a boolean when present')
+            scope = id_list(action.get('target_ids'), 'target_ids')
+            if any(target_id not in targets for target_id in scope):
+                raise ValueError('target_ids contains an unknown or quarantined target')
+            af = action.get('followup', {})
+            if not isinstance(af, dict):
+                raise ValueError('followup must be an object')
+            for field in ('all_outbound_not_before', 'cooldown_until', 'expected_response_due_at'):
+                if af.get(field) is not None:
+                    timestamp(af[field], f'{key}.{field}')
+        except ValueError as exc:
+            error(result, 'actions', str(exc), key)
+            invalid_actions.add(key)
+    before = len(result['errors'])
+    groups = correction_groups(actions, result)
+    unsafe |= len(result['errors']) > before
+    # Unclassifiable historical work may have sent. Do not let task order hide it.
+    for key, task in task_map.items():
+        if not member(task.get('kind'), KINDS) or not member(task.get('status'), TASK_STATES):
+            unsafe = True
+        if member(task.get('kind'), OUTBOUND) and not member(task.get('status'), CLOSED_TASKS):
+            if (not identifier(task.get('action_id')) or task['action_id'] not in actions
+                    or not identifier(task.get('dedupe_key'))):
+                unsafe = True
     for key, run in runs.items():
         if not member(run.get('status'), {'running', 'completed', 'interrupted'}):
             error(result, 'runs', 'run status needs verification (running/completed/interrupted)', key)
@@ -262,6 +372,7 @@ def build_queue(case, now, horizon_hours=48):
             unsafe = True
             add_recovery(result, attempt.get('task_id'), 'reconcile_send', 'invalid_delivery_record', attempt_id=key)
 
+    claimed, pending, used_keys, collisions = delivery_barriers(task_map, valid_attempts, groups)
     valid_tasks = []
     for key, task in task_map.items():
         try:
@@ -275,16 +386,28 @@ def build_queue(case, now, horizon_hours=48):
                 raise ValueError('unknown action_id')
             if kind in OUTBOUND and (action_id is None or not identifier(task.get('dedupe_key'))):
                 raise ValueError('outbound task requires action_id and dedupe_key')
-            if 'target_ids' in task and (not isinstance(task['target_ids'], list)
-                                       or not all(identifier(t) for t in task['target_ids'])):
-                raise ValueError('target_ids must be a list of ids')
             action = actions.get(action_id, {})
+            if 'target_ids' in task:
+                scope = id_list(task['target_ids'], 'target_ids')
+                if any(target_id not in targets for target_id in scope):
+                    raise ValueError('target_ids contains an unknown or quarantined target')
+                parent_scope = action.get('target_ids')
+                if action_id is not None and (not isinstance(parent_scope, list)
+                        or any(target_id not in parent_scope for target_id in scope)):
+                    raise ValueError('task target_ids must be within its action target_ids')
+            if 'deadline_ids' in task:
+                for deadline_id in id_list(task['deadline_ids'], 'deadline_ids', allow_empty=True):
+                    if deadline_id not in deadline_map:
+                        raise ValueError('unknown or quarantined deadline_id')
+                    owner = deadline_map[deadline_id].get('action_id')
+                    if owner is not None and owner != action_id:
+                        raise ValueError('deadline_id belongs to another action')
             if kind == 'send_correction' and not action.get('corrects_action_id'):
                 raise ValueError('send_correction requires an independent linked correction action')
             due = timestamp(task.get('due_at'), f'{key}.due_at')
             eligible = due
             constraints = []
-            if task.get('not_before'):
+            if task.get('not_before') is not None:
                 eligible = max(eligible, timestamp(task['not_before'], f'{key}.not_before'))
                 constraints.append('task_not_before')
             held = None
@@ -307,21 +430,26 @@ def build_queue(case, now, horizon_hours=48):
                 if kind == 'remind':
                     fields.append(('expected_response_due_at', 'provider_response_window'))
                 for field, reason in fields:
-                    if af.get(field):
+                    if af.get(field) is not None:
                         eligible = max(eligible, timestamp(af[field], f'{action_id}.{field}'))
                         constraints.append(reason)
+                duplicate_key = task['dedupe_key'] in collisions
+                if duplicate_key:
+                    error(result, 'followup_tasks', 'duplicate active outbound dedupe_key; all candidates held', key)
                 if not held:
-                    if unsafe:
+                    if unsafe or action_id in invalid_actions:
                         held = 'record_integrity_requires_review'
+                    elif duplicate_key:
+                        held = 'duplicate_dedupe_key'
                     elif action.get('claim_frozen') is True:
                         held = 'claim_frozen'
                     elif member(action.get('status'), TERMINAL_ACTIONS):
                         held = 'action_terminal'
-                    elif any(a['action_id'] in {action_id, action.get('corrects_action_id')}
-                             and a['status'] in PENDING_SEND for a in valid_attempts):
+                    elif groups[action_id] in claimed:
+                        held = 'action_has_unresolved_claim'
+                    elif groups[action_id] in pending:
                         held = 'action_has_unresolved_send'
-                    elif any(a['dedupe_key'] == task['dedupe_key'] and a['status'] in (PENDING_SEND | {'sent'})
-                             for a in valid_attempts):
+                    elif task['dedupe_key'] in used_keys:
                         held = 'matching_sent_or_unresolved_attempt'
             item = {'id': key, 'action_id': action_id, 'kind': kind, 'due_at': task['due_at'],
                     'eligible_at': eligible.isoformat(), 'external_action_candidate': kind in OUTBOUND}
@@ -332,7 +460,7 @@ def build_queue(case, now, horizon_hours=48):
             else:
                 result['due_tasks'].append(item)
             for deadline, when in deadlines:
-                if deadline.get('action_id') == action_id and action_id is not None:
+                if linked_deadline(task, deadline):
                     if (held and when <= horizon) or eligible >= when:
                         result['deadline_conflicts'].append({
                             'task_id': key, 'deadline_id': deadline['id'], 'action_id': action_id,
@@ -361,19 +489,20 @@ def main():
         now, _ = window(now, args.horizon_hours)
     except ValueError as exc:
         print(json.dumps({'checked_at': None, 'queue_only': True, 'cases': [],
-                          'errors': [{'section': 'arguments', 'error': str(exc)}]}, ensure_ascii=False, indent=2))
+                          'errors': [{'section': 'arguments', 'error': str(exc)}]}, ensure_ascii=True, indent=2))
         return 2
     report = {'checked_at': now.isoformat(), 'queue_only': True, 'cases': [], 'errors': []}
     for path in args.case:
         try:
-            case = json.loads(path.read_text())
+            case = json.loads(path.read_text(encoding='utf-8-sig'), object_pairs_hook=unique_object,
+                              parse_constant=reject_constant, parse_float=finite_number)
             result = build_queue(case, now, args.horizon_hours)
             result['source_path'] = str(path)
             report['cases'].append(result)
             report['errors'].extend({'source_path': str(path), **e} for e in result['errors'])
-        except (OSError, ValueError, TypeError, AttributeError, KeyError, OverflowError) as exc:
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, OverflowError, RecursionError) as exc:
             report['errors'].append({'source_path': str(path), 'error': str(exc)})
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(report, ensure_ascii=True, indent=2))
     return 1 if report['errors'] else 0
 
 

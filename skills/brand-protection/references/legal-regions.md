@@ -25,7 +25,7 @@ URS 资格单独核验：Procedure §1.2.6.1 的 `word mark` 须满足有效国�
 ## 北美和欧洲程序差异
 
 - **美国：** DMCA 对应版权；需应对反通知或计划诉讼时，另按 [版权诉讼准备](evidence.md#dmca-反通知前的诉讼准备) 检查登记等条件，不把登记当成通知前置。商标、假冒、虚假来源和域名抢注走相应平台政策或法律路径；专利/外观设计按 [独立分流](patents-designs.md) 处理。禁令、损害赔偿、身份披露、证据保全、ACPA 等需要结合权利、法院管辖与事实判断，准备律师交接包，不生成未经核实的诉状或判例。
-- **加拿大：** 法定 [Notice and Notice](https://ised-isde.canada.ca/site/strategic-policy-sector/en/marketplace-framework-policy/copyright-policy/frequently-asked-questions-legislative-amendments-copyright-act-notice-and-notice) 通常是中介转发通知，不等同美国下架机制。此类通知中索款、索要个人信息或和解要求等可能使通知不合规；依具体服务商另查内容移除程序。[消费者官方说明](https://ised-isde.canada.ca/site/office-consumer-affairs/en/connected-consumer/notices-canadian-internet-subscribers)
+- **加拿大：** 法定 Notice and Notice 的通知内容见现行 [Copyright Act §41.25](https://laws-lois.justice.gc.ca/eng/acts/C-42/section-41.25.html)，中介转发义务见 [§41.26](https://laws-lois.justice.gc.ca/eng/acts/C-42/section-41.26.html)，不等同美国下架机制。§41.25(3) 禁止和解提议、与指称侵权有关的索款/个人信息要求，以及指向这些内容的链接；依具体服务商另查内容移除程序。[消费者官方说明](https://ised-isde.canada.ca/site/office-consumer-affairs/en/connected-consumer/notices-canadian-internet-subscribers)。此次引用核验于 2026-11-12；实际操作仍核对当期文本。
 - **欧盟：** 针对适用的托管服务可使用 DSA notice-and-action，但应指出欧盟/成员国实体法律依据、准确位置及充分理由；DSA 不是一项新的商标权。按平台类别、法定例外和资格核实内部投诉、认证非诉争议解决及 DSC 合规投诉；这些不代替法院裁判。[欧委会用户权利](https://digital-strategy.ec.europa.eu/en/factpages/user-rights-under-digital-services-act)、[现行 DSA 正文](https://eur-lex.europa.eu/eli/reg/2022/2065/oj/eng)。不能自称 trusted flagger。
 - **英国：** 单独核查 UK 权利、平台规则及法院程序；不能自动使用 EU 商标/DSA/欧盟海关申请覆盖英国。具体保护范围与脱欧后转换权利以登记记录为准。
 - **其他：** 墨西哥、瑞士、挪威等按国家和实际权利补查；“北美/欧洲”不能当成一个统一法域。需要追查中国等出口端时，再确认当地权利和货物流向。
