@@ -8,11 +8,11 @@
 
 Linux 可执行 `sha256sum brand-protection-v1.0.0.zip`，macOS 可执行 `shasum -a 256 brand-protection-v1.0.0.zip`；Windows PowerShell 执行 `Get-FileHash .\brand-protection-v1.0.0.zip -Algorithm SHA256`。将结果与同一 Release 的 `SHA256SUMS.txt` 中对应文件的值核对。不一致时停止安装。
 
-`SHA256SUMS.txt` 同时列出 ZIP、INSTALL.md 和 VALIDATION.json 的哈希；下载这三个文件后，可在 Linux 使用 `sha256sum -c SHA256SUMS.txt`，macOS 使用 `shasum -a 256 -c SHA256SUMS.txt`。哈希用于检查字节一致性，不是法律证据真实性或独立安全认证。
+原 `SHA256SUMS.txt` 列出独立 Skill ZIP 与完整源码 ZIP 的哈希；两个包均下载后可使用 `sha256sum -c SHA256SUMS.txt`（macOS：`shasum -a 256 -c SHA256SUMS.txt`）。仅下载一个包时核对其对应行即可。新增 `VALIDATION-SHA256SUMS.txt` 单独校验 `INSTALL.md` 和 `VALIDATION.json`；不替换原有校验文件。哈希用于检查字节一致性，不是法律证据真实性或独立安全认证。
 
 ## 2. 安装独立 Skill
 
-解压后应得到一个 `brand-protection/` 文件夹，其内直接包含 `SKILL.md`、`LICENSE`、`agents/`、`assets/`、`references/`、`scripts/`，另附安装说明、更新说明及文件清单。
+解压后应得到一个 `brand-protection/` 文件夹，其内直接包含 `SKILL.md`、`LICENSE`、`agents/`、`assets/`、`references/`、`scripts/`，共 17 个通用文件。安装说明和补充验证报告作为 Release 的独立附件提供；已发布 ZIP 保持原样，不重新打包。
 
 复制整个文件夹到以下一个位置，不要只复制 SKILL.md：
 

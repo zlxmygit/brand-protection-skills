@@ -1,4 +1,4 @@
-name: Publish verified Skill v1.0.0
+name: Verify and complete Skill v1.0.0
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
         run: python -B -m unittest discover -s tests -v
 
   publish:
-    name: Build, verify, upload and publish
+    name: Verify published assets and add release documents
     needs: validate
     if: github.repository == 'zlxmygit/brand-protection-skills' && github.ref == 'refs/heads/release/v1.0.0'
     runs-on: ubuntu-22.04
@@ -56,59 +56,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.13'
-      - name: Build allowlisted package and test the unpacked installation
-        run: python -B .github/release-v1.0.0/build.py
-      - name: Upload to draft, download and verify, then publish
+      - name: Verify published packages and supplement without replacing assets
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: zlxmygit/brand-protection-skills
-          TAG: v1.0.0
-          SOURCE: 400e3a00710474d8a321dcd06b1148d910391609
-        shell: bash
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            echo "Refusing to overwrite an existing release."
-            exit 1
-          fi
-          existing=$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
-          if [[ -n "$existing" && "$existing" != "$SOURCE" ]]; then
-            echo "Existing tag does not match verified source."
-            exit 1
-          fi
-          if [[ -z "$existing" ]]; then
-            gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE"
-          fi
-          gh release create "$TAG" --repo "$GH_REPO" --verify-tag --draft \
-            --title 'Brand Protection Skill v1.0.0 — 审计修复与通用安装包' \
-            --notes-file dist/RELEASE-NOTES.md \
-            dist/brand-protection-v1.0.0.zip dist/SHA256SUMS.txt dist/INSTALL.md dist/VALIDATION.json
-          gh api "repos/$GH_REPO/releases/tags/$TAG" > remote-draft.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          release = json.loads(Path('remote-draft.json').read_text())
-          expected = {'brand-protection-v1.0.0.zip', 'SHA256SUMS.txt', 'INSTALL.md', 'VALIDATION.json'}
-          assert release['draft'] is True and release['prerelease'] is False
-          assert {asset['name'] for asset in release['assets']} == expected
-          assert len(release['assets']) == len(expected)
-          for asset in release['assets']:
-              assert asset['state'] == 'uploaded'
-              assert asset['size'] == (Path('dist') / asset['name']).stat().st_size
-          PY
-          gh release download "$TAG" --repo "$GH_REPO" --dir downloaded --pattern '*'
-          cmp dist/SHA256SUMS.txt downloaded/SHA256SUMS.txt
-          (cd downloaded && sha256sum -c SHA256SUMS.txt)
-          test "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.sha')" = "$SOURCE"
-          gh release edit "$TAG" --repo "$GH_REPO" --draft=false --prerelease=false --latest
-          gh api "repos/$GH_REPO/releases/tags/$TAG" > published-release.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          release = json.loads(Path('published-release.json').read_text())
-          assert release['draft'] is False and release['prerelease'] is False
-          assert release['published_at'] and len(release['assets']) == 4
-          print('Published:', release['html_url'])
-          for asset in release['assets']:
-              print(asset['name'], asset['size'], asset.get('digest'), asset['browser_download_url'])
-          PY
+        run: python -B .github/release-v1.0.0/verify_published.py
