@@ -1,0 +1,47 @@
+name: 缺陷报告 / Bug report
+description: 报告文档、安装或只读队列的可复现问题。
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请只提供脱敏或合成数据。漏洞及敏感信息泄露请先阅读 [SECURITY.md](https://github.com/zlxmygit/brand-protection-skills/blob/main/SECURITY.md)。这里不受理真实品牌投诉。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 公开信息检查
+      options:
+        - label: 我已移除真实品牌材料、案件记录、凭证、个人信息及私有路径。
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: 代码版本
+      description: commit SHA 或实际 tag；不是案件 schema_version。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: Agent/客户端及版本、系统、安装方式；脚本问题另附 Python 版本。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 最小复现步骤
+      description: 使用虚构数据；不要上传整个私有案件目录。
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 期望与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏错误或补充说明
+      render: text

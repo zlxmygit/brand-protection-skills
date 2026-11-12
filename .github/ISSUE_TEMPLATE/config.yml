@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用与支持 / Usage and support
+    url: https://github.com/zlxmygit/brand-protection-skills/blob/main/SUPPORT.md
+    about: 安装、运行条件、反馈入口及项目支持范围。
+  - name: 安全报告 / Security reporting
+    url: https://github.com/zlxmygit/brand-protection-skills/blob/main/SECURITY.md
+    about: 漏洞或敏感信息问题先阅读此流程，不要公开提交细节。

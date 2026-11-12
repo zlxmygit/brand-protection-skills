@@ -1,10 +1,14 @@
 # Brand Protection Skills
 
+**Reusable brand protection workflow for AI agents.** Collect brand and market inputs, organize evidence, prepare channel-specific complaints, and track authorized follow-up. No real brand materials or case records are included.
+
 面向品牌权利人及其授权团队的通用品牌维权 Agent Skill。把用户提供的品牌、目标市场、权利材料和疑似侵权线索，整理为可核验的证据、逐渠道投诉材料及可持续跟进的案件记录。
 
 仓库目前提供一个 Skill：[`brand-protection`](skills/brand-protection/SKILL.md)。支持官网仿冒、素材复制、疑似假货、侵权商品链接、域名争议及相关进出口线索；品牌、国家、行业和资料位置均由用户填写，不预置任何实际品牌或案件。
 
 Skill 保存工作方法、模板和只读辅助脚本。调查、反馈读取、提交与定时唤醒依赖运行环境提供的工具及用户授权。它本身不是后台服务，也不包含自动群发投诉程序。
+
+[贡献指南](CONTRIBUTING.md) · [使用与支持](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md) · [变更记录](CHANGELOG.md) · [反馈问题](https://github.com/zlxmygit/brand-protection-skills/issues/new/choose)
 
 ## 内容导航
 
@@ -230,7 +234,19 @@ python3 skills/brand-protection/scripts/followup_queue.py \
 ```text
 brand-protection-skills/
 ├── README.md
+├── CONTRIBUTING.md
+├── SUPPORT.md
+├── SECURITY.md
+├── CODE_OF_CONDUCT.md
+├── CHANGELOG.md
 ├── .gitignore
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── feature_request.yml
+│   │   ├── channel_update.yml
+│   │   └── config.yml
+│   └── PULL_REQUEST_TEMPLATE.md
 ├── skills/brand-protection/
 │   ├── SKILL.md
 │   ├── agents/openai.yaml

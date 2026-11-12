@@ -1,0 +1,42 @@
+name: 渠道与规则更新 / Channel update
+description: 报告官方入口、地区规则或受理要求的变化。
+title: "[Channel] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供第一方官方来源。区分法律期限、服务商要求和项目运营默认值；不要在这里粘贴真实投诉回执或法律文件。
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 公开信息检查
+      options:
+        - label: 本报告只包含可公开的资料，不含真实案件记录或个人信息。
+          required: true
+  - type: input
+    id: scope
+    attributes:
+      label: 地区、渠道与受影响文件
+      placeholder: 例如：某地区 / 某平台 / references 中的文件
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: 官方来源与核查日期
+      description: 提供官方页面链接、核查日期及能支持结论的位置；避免贴整篇受版权保护的文章。
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: 当前内容、官方变化及建议修订
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 生效时间、适用范围与不确定项
+      description: 不清楚的项目写待核验，不推断全球适用。
+    validations:
+      required: true
