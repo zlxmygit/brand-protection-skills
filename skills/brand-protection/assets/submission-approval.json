@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "case_id": null,
+  "action_id": null,
+  "snapshot_sha256": null,
+  "reviewed_by": null,
+  "authorization_source": null,
+  "approved_at": null,
+  "expires_at": null,
+  "checks": {
+    "rights_checked": false,
+    "counter_evidence_checked": false,
+    "recipient_verified": false,
+    "disclosure_reviewed": false,
+    "signature_authority_checked": false,
+    "fees_checked": false,
+    "latest_feedback_checked": false
+  }
+}
