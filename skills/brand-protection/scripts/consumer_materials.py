@@ -16,10 +16,12 @@ from investigation import read_json, text, timestamp, domain_ascii, ids
 from submission_review import indexed
 from evidence_export import digest
 from capture_web import private_root, write_private
+from record_integrity import check_identity, evidence_closure
 
 ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 GATES = {'official_channels_reviewed','public_text_reviewed','privacy_reviewed'}
 KINDS = {'website','store','support'}
+SNAPSHOT_VERSION = '1.1'
 DRAFT_HEADER = '草稿：发布前仍需人工复核，请勿直接外发。\n\n'
 
 
@@ -55,6 +57,7 @@ def prepare(case, now=None):
     profile = case.get('consumer_communications')
     if not isinstance(profile,dict) or profile.get('version') != '1.0' or profile.get('brand_id') != brand_id:
         raise ValueError('Expected a same-brand consumer communication profile')
+    check_identity(case, profile, 'consumer communication profile')
     checked = timestamp(profile.get('checked_at'),'checked_at')
     before = timestamp(profile.get('review_before'),'review_before')
     if not checked <= now < before:
@@ -67,6 +70,7 @@ def prepare(case, now=None):
         raise ValueError('Record between 1 and 30 reviewed official channels')
     seen, used_evidence, rows = set(), set(), []
     for key, channel in sorted(channels.items()):
+        check_identity(case, channel, 'official channel ' + key)
         kind = channel.get('kind')
         if not isinstance(kind,str) or kind not in KINDS or channel.get('verification_status') != 'verified':
             raise ValueError('Each channel needs a supported kind and recorded verification')
@@ -78,13 +82,11 @@ def prepare(case, now=None):
         if verified > checked:
             raise ValueError('Channel changed after the profile review')
         refs = ids(channel.get('evidence_ids'),'channel evidence_ids',allow_empty=False)
-        if any(ref not in evidence for ref in refs):
-            raise ValueError('Channel verification evidence is missing')
-        for ref in refs:
-            if evidence[ref].get('brand_id',brand_id) != brand_id:
-                raise ValueError('Channel evidence belongs to another brand')
         used_evidence.update(refs)
         rows.append((key,kind,url))
+    # Validate the union once: parents shared across channels count once and
+    # every ancestor contributes to the recorded-source review fingerprint.
+    used_evidence = evidence_closure(case, evidence, sorted(used_evidence))
     support_id = text(profile.get('support_channel_id'),'support_channel_id',200)
     if support_id not in channels or channels[support_id]['kind'] != 'support':
         raise ValueError('Choose an explicitly verified support channel')
@@ -100,11 +102,11 @@ def prepare(case, now=None):
         if not isinstance(content,str):
             raise ValueError('Template must be text')
         drafts[name+'.txt'] = DRAFT_HEADER + Template(content).substitute(context)
-    source = {'case_id':case_id,'brand_id':brand_id,'brand':brand,'official_domains':sorted(domains),
+    source = {'snapshot_version':SNAPSHOT_VERSION,'case_id':case_id,'brand_id':brand_id,'brand':brand,'official_domains':sorted(domains),
               'profile':profile,'evidence':[evidence[key] for key in sorted(used_evidence)],
               'templates':templates,'drafts':drafts}
     fingerprint = hashlib.sha256(json.dumps(source,ensure_ascii=True,sort_keys=True,separators=(',',':'),allow_nan=False).encode('ascii')).hexdigest()
-    return {'case_id':case_id,'brand_id':brand_id,'snapshot_sha256':fingerprint,'drafts':drafts,
+    return {'snapshot_version':SNAPSHOT_VERSION,'case_id':case_id,'brand_id':brand_id,'snapshot_sha256':fingerprint,'drafts':drafts,
             'state':'draft_needs_review','authorizes_publication':False,'sends_messages':False}
 
 
@@ -147,7 +149,8 @@ def generate(case, output_root, approval=None, now=None):
         receipt = {key:value for key,value in prepared.items() if key!='drafts'}
         receipt.update(directory=str(directory),files=hashes,
                        limitations=['Draft review records do not authenticate identity or grant publication authority',
-                                    'Official-channel evidence must be independently verified before public use'])
+                                    'Official-channel evidence must be independently verified before public use',
+                                    'Fingerprint binds recorded evidence lineage, not freshly read evidence file bytes'])
         write_private(directory/'internal-review.json',json.dumps(receipt,ensure_ascii=True,indent=2).encode('ascii'))
         return receipt
     except BaseException:

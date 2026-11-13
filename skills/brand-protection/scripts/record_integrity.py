@@ -162,3 +162,50 @@ def correction_family(actions, action_id):
             found.add(key)
             pending.extend(graph[key])
     return found
+
+
+def review_right_scope(case, action, rights):
+    """One rights boundary for channel checks and approval dependency resolution.
+
+    Omitted right_ids keeps the legacy all-rights scope. Explicit scope is never
+    widened to accommodate a channel mapping. This validates references, not
+    legal merits, channel completeness or permission to submit.
+    """
+    if not isinstance(action, dict) or not isinstance(rights, dict) or len(rights) > MAX_RECORDS:
+        raise ValueError('Invalid or oversized rights scope')
+    check_identity(case, action, 'action')
+    brand_id = identifier(case.get('brand_id'), 'brand_id')
+    selected = references(action, 'right_ids') if 'right_ids' in action else sorted(rights)
+    if not selected:
+        raise ValueError('Record the rights relied upon by this action')
+    for key in selected:
+        if key not in rights:
+            raise ValueError('Unknown right in action scope')
+        check_identity(case, rights[key], 'right ' + key)
+        if rights[key].get('brand_id') != brand_id:
+            raise ValueError('Right belongs to another or unconfirmed brand')
+    if 'channel_review' in action:
+        channel = action['channel_review']
+        if not isinstance(channel, dict):
+            raise ValueError('Channel review must be an object')
+        check_identity(case, channel, 'channel review')
+        # A partial channel review can still be fingerprinted; channel_check
+        # independently requires a complete profile. Supplied mappings may
+        # never be silently ignored by the fingerprint resolver.
+        if 'work_mappings' in channel:
+            rows = channel['work_mappings']
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
+                raise ValueError('Work mappings must be a non-empty bounded list')
+            targets = set(references(action, 'target_ids'))
+            selected_set = set(selected)
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise ValueError('Work mapping must be an object')
+                target_id = identifier(row.get('target_id'), 'mapping.target_id')
+                right_id = identifier(row.get('right_id'), 'mapping.right_id')
+                check_identity(case, row, 'work mapping', {target_id})
+                if target_id not in targets:
+                    raise ValueError('Work mapping target is outside this action')
+                if right_id not in selected_set:
+                    raise ValueError('Mapped right is outside this action rights scope')
+    return sorted(selected)
