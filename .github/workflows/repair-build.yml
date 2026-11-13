@@ -1,0 +1,98 @@
+name: Isolated v1.8.1 repair validation
+on:
+  push:
+    branches: [work/v1.8.1-repair-builder]
+permissions:
+  contents: read
+concurrency:
+  group: isolated-repair-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  tests:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04]
+        python: ['3.9', '3.11', '3.13', '3.14']
+        include:
+          - os: windows-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify staged repair bytes
+        run: python -B repair/unpack.py
+      - name: Apply deterministic patches to the fixed production baseline
+        run: python -B repair/apply.py
+      - name: Commit clean candidate locally for source/package identity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Repair validation'
+          git config user.email 'repair-validation@users.noreply.github.com'
+          git add -A
+          git commit -m 'Validate clean v1.8.1 candidate'
+          git ls-tree -r --name-only HEAD
+      - name: Run original regressions, audit counterexamples and new hardening tests
+        run: python -B -m unittest discover -s tests -v
+      - name: Run bounded cross-module mutation and graph probes
+        run: python -B tests/extended_v18_probes.py
+      - name: Verify installed package and public RDAP/HTTPS probes
+        if: matrix.python == '3.13' && runner.os == 'Linux'
+        run: python -B tools/build_release.py --live
+      - name: Prove committed source unchanged by tests
+        run: git diff --exit-code
+  store_verified_tree:
+    needs: tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - run: python -B repair/unpack.py
+      - run: python -B repair/apply.py
+      - name: Materialize clean reviewed tree without moving any branch or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          python -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          root = pathlib.Path.cwd()
+          base = '93c23f483bdd77d728c451343b894e15dae3db4a'
+          wanted = subprocess.check_output(['git','write-tree'],text=True).strip()
+          names = subprocess.check_output(['git','diff','--cached','--name-only',base],text=True).splitlines()
+          entries = []
+          for name in names:
+              assert name.startswith(('skills/','tests/','docs/','release/')) or name in {'.gitignore','README.md','CHANGELOG.md'}, name
+              path = root/name
+              assert path.is_file() and not path.is_symlink(), name
+              data = path.read_bytes()
+              entries.append({'path':name,'mode':'100644','type':'blob','content':data.decode('utf-8')})
+              print('REPAIR_FILE',name,hashlib.sha256(data).hexdigest())
+          request = urllib.request.Request('https://api.github.com/repos/'+os.environ['GH_REPO']+'/git/trees',
+              data=json.dumps({'base_tree':'99d5a5a4e1d254ca546b6f3305f6cb1cc917ab91','tree':entries}).encode(),
+              headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','User-Agent':'verified-repair-tree'}, method='POST')
+          with urllib.request.urlopen(request,timeout=60) as response:
+              result=json.load(response)
+          assert result['sha']==wanted, (result['sha'],wanted)
+          print('REPAIR_TREE_SHA='+wanted)
+          print('REPAIR_CHANGED_FILES='+str(len(entries)))
+          PY
