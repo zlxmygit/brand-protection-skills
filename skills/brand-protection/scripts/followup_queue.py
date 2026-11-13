@@ -11,11 +11,11 @@ import sys
 
 
 KINDS = {
-    'check_feedback', 'check_target', 'verify_receipt', 'remind', 'resubmit',
+    'initial_notice', 'check_feedback', 'check_target', 'verify_receipt', 'remind', 'resubmit',
     'send_supplement', 'send_escalation', 'send_correction', 'prepare_escalation',
     'verify_effect', 'check_recurrence', 'reconcile_send',
 }
-OUTBOUND = {'remind', 'resubmit', 'send_supplement', 'send_escalation', 'send_correction'}
+OUTBOUND = {'initial_notice', 'remind', 'resubmit', 'send_supplement', 'send_escalation', 'send_correction'}
 TASK_STATES = {'planned', 'ready', 'in_progress', 'blocked', 'completed', 'cancelled'}
 TERMINAL_ACTIONS = {'withdrawn', 'closed_no_action', 'verified_effective'}
 ACTION_STATES = TERMINAL_ACTIONS | {

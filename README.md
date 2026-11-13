@@ -87,6 +87,8 @@ python3 skills/brand-protection/scripts/investigation.py --case /path/to/private
 
 ## 测试与发布
 
+v1.8.1 修复跨模块审计缺口。升级前阅读[兼容与校验说明](skills/brand-protection/references/audit-fixes.md)，尤其是审批快照重新复核和服务商目标归属要求。
+
 在仓库根目录运行：
 
 ```bash

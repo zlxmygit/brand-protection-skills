@@ -43,3 +43,7 @@ HTTP 403、404 和其他状态只记录为本次访问结果。它们不证明�
 哈希用于检查字节是否变化，不证明页面真实性、首次发布时间或法院可采性。响应头只保留必要字段，不保留 Cookie。完整浏览器取证、可信时间戳和公证仍按案件需要另行处理。
 
 设计参考 [OWASP SSRF 防护说明](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)和 [Python HTTP 客户端文档](https://docs.python.org/3/library/http.client.html)。核验日期：2026-11-13。
+
+## v1.8.1 校验修正
+
+升级后的材料依赖、品牌及目标关联、首次通知和输入输出检查见[审计修复说明](audit-fixes.md)。旧审批快照需要重新复核，不自动改写私有案件。

@@ -30,6 +30,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -B -m unittest discover -s tests -v
+      - name: Run bounded cross-module mutations and graph checks
+        run: python -B tests/extended_v18_probes.py
       - name: Verify extracted package without publication credentials
         if: matrix.python == '3.13' && runner.os == 'Linux'
         run: python -B tools/build_release.py --live

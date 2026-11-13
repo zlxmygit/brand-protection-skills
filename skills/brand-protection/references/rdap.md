@@ -35,3 +35,7 @@ python3 scripts/rdap_lookup.py --domain example.com --target-id target-1 --allow
 入口和字段按 [Verisign 查询说明](https://www.verisign.com/news-insights/registration-data-access-protocol/help/)及 [RFC 9082](https://www.rfc-editor.org/rfc/rfc9082.html)核验。使用时遵守 [Verisign 条款](https://www.verisign.com/legal-center/rdap-terms/)，不要开展高频自动查询。核验日期：2026-11-13。
 
 本版用合成数据检查失败场景，并在发布前查询一次公开的 `example.com`。实际执行结果见发布附件 `VALIDATION.json`。该检查不代表真实案件或全网发现能力已验收。
+
+## v1.8.1 校验修正
+
+升级后的材料依赖、品牌及目标关联、首次通知和输入输出检查见[审计修复说明](audit-fixes.md)。旧审批快照需要重新复核，不自动改写私有案件。
