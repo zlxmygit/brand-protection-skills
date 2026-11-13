@@ -1,0 +1,96 @@
+name: Independent atomic audit
+on:
+  push:
+    branches: [audit/v1.8.0-atomic-20261113]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04]
+        python: ['3.9', '3.13']
+        include:
+          - os: windows-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Check immutable source and run original regressions
+        shell: bash
+        run: |
+          git diff --exit-code 93c23f483bdd77d728c451343b894e15dae3db4a HEAD -- skills tests tools release docs .agents AGENTS.md README.md
+          python -B -m unittest discover -s tests -v
+      - name: Independent acceptance probes (failures are findings)
+        id: probes
+        continue-on-error: true
+        run: python -B audit/audit_regressions.py
+      - name: Rebuild and test installed package and public examples
+        if: matrix.python == '3.13' && runner.os == 'Linux'
+        run: python -B tools/build_release.py --live
+      - name: Verify published release bytes and inventory
+        if: matrix.python == '3.13' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          python -B - <<'PY'
+          import ast, hashlib, io, json, pathlib, subprocess, urllib.request, zipfile
+          root = pathlib.Path.cwd()
+          base = '93c23f483bdd77d728c451343b894e15dae3db4a'
+          tree = subprocess.check_output(['git','ls-tree','-rz',base])
+          inventory = []
+          for row in tree.split(b'\0'):
+              if not row: continue
+              meta, rawname = row.split(b'\t')
+              mode, kind, blob = meta.decode().split()
+              name = rawname.decode()
+              data = (root/name).read_bytes()
+              actual = hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+              assert mode == '100644' and kind == 'blob' and actual == blob, name
+              if name.endswith('.py'): ast.parse(data, filename=name)
+              inventory.append({'path':name,'bytes':len(data),'lines':len(data.splitlines()),'blob':blob,'sha256':hashlib.sha256(data).hexdigest()})
+          print('INVENTORY_JSON='+json.dumps(inventory,separators=(',',':')))
+          def get(url, limit=25000000):
+              request = urllib.request.Request(url,headers={'User-Agent':'brand-protection-independent-audit'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  data = response.read(limit+1)
+              assert len(data)<=limit
+              return data
+          release = json.loads(get('https://api.github.com/repos/zlxmygit/brand-protection-skills/releases/tags/v1.8.0'))
+          assert not release['draft'] and not release['prerelease']
+          assets = {a['name']:get(a['browser_download_url']) for a in release['assets']}
+          assert len(assets)==5
+          for line in assets['SHA256SUMS.txt'].decode('ascii').splitlines():
+              expected, name = line.split(None,1)
+              assert hashlib.sha256(assets[name]).hexdigest()==expected, name
+          manifest = json.loads(assets['PACKAGE-MANIFEST.json'])
+          assert manifest['source_commit']==base
+          installed = {r['path']:r['sha256'] for r in manifest['files']}
+          payload = assets['brand-protection-v1.8.0.zip']
+          with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+              assert len(archive.namelist())==len(set(archive.namelist()))==38
+              assert set(archive.namelist())==set(installed)
+              assert archive.testzip() is None
+              for name, expected in installed.items():
+                  data = archive.read(name)
+                  assert hashlib.sha256(data).hexdigest()==expected, name
+                  assert data==(root/'skills'/name).read_bytes(), name
+          assert payload==(root/'dist/brand-protection-v1.8.0.zip').read_bytes()
+          print('RELEASE_AUDIT_JSON='+json.dumps({'baseline':base,'files':len(inventory),'lines':sum(r['lines'] for r in inventory), 'package_files':len(installed),'sha256':hashlib.sha256(payload).hexdigest(),'release_assets_verified':len(assets),'matches_rebuilt_package':True,'published_validation':json.loads(assets['VALIDATION.json'])},separators=(',',':')))
+          PY
+      - name: Preserve audit outcome and prove tracked source unchanged
+        if: always()
+        shell: bash
+        env:
+          PROBE_OUTCOME: ${{ steps.probes.outcome }}
+        run: |
+          echo "Independent acceptance outcome: $PROBE_OUTCOME (failure means confirmed missing contracts; original tests are separate)"
+          git diff --exit-code
+          git status --short
