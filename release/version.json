@@ -1,1 +1,1 @@
-{"tag":"v1.4.0","previous":"v1.3.0","capability":"reviewed-evidence-export","minimum_tests":157,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.5.0","previous":"v1.4.0","capability":"submission-review","minimum_tests":182,"required_live_checks":["rdap","capture"]}
