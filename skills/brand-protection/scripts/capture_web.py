@@ -20,6 +20,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import domain_ascii, text
+from filesystem_paths import checked_existing_path
 
 LIMIT = 5 * 1024 * 1024
 HEADERS = ('content-type', 'content-length', 'content-encoding', 'location', 'date', 'etag', 'last-modified')
@@ -161,10 +162,7 @@ def collect(url, allowed_hosts, *, allow_network=False, timeout=10, max_redirect
 
 
 def private_root(directory):
-    supplied = Path(directory).expanduser().absolute()
-    if '..' in supplied.parts or any(p.is_symlink() for p in (supplied, *supplied.parents)):
-        raise ValueError('Use a private directory without symlinks or parent traversal')
-    root = supplied.resolve(strict=True)
+    root = checked_existing_path(directory)
     if not root.is_dir():
         raise ValueError('Private evidence directory must already exist')
     skill = Path(__file__).resolve().parents[1]
@@ -186,7 +184,7 @@ def private_root(directory):
 
 
 def write_private(path, data):
-    descriptor = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    descriptor = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_BINARY', 0), 0o600)
     with os.fdopen(descriptor, 'wb') as handle:
         handle.write(data)
         handle.flush()

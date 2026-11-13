@@ -17,6 +17,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import text, timestamp, read_json, index_rows
 from capture_web import private_root, write_private
+from filesystem_paths import checked_existing_path, validate_windows_path
 
 from record_integrity import check_identity, evidence_closure
 
@@ -37,11 +38,11 @@ def read_evidence(root, location, expected_hash):
     candidate = Path(location)
     if '..' in candidate.parts:
         raise ValueError('Parent traversal is not allowed')
+    if os.name == 'nt':
+        validate_windows_path(location)
     if not candidate.is_absolute():
         candidate = root / candidate
-    if any(p.is_symlink() for p in (candidate, *candidate.parents)):
-        raise ValueError('Evidence symlinks are not allowed')
-    resolved = candidate.resolve(strict=True)
+    resolved = checked_existing_path(candidate)
     try:
         resolved.relative_to(root)
     except ValueError as exc:
