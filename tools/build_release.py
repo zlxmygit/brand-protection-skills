@@ -1,4 +1,5 @@
 """Build an allowlisted Skill archive and test the actual extracted scripts."""
+import argparse
 import hashlib
 import json
 import os
@@ -36,6 +37,9 @@ def sha256(data):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--live', action='store_true', help='Allow required public integration probes')
+    args = parser.parse_args()
     version = json.loads((ROOT / 'release/version.json').read_text(encoding='utf-8'))
     tag = version['tag']
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
@@ -100,6 +104,8 @@ def main():
             if relative not in listed:
                 raise ValueError('broken installed file link: ' + relative)
             links += 1
+    if version.get('required_live_checks') and not args.live:
+        raise ValueError('This release requires --live public integration validation')
     source_count = run_tests()
     out = ROOT / 'dist'
     out.mkdir(exist_ok=True)
@@ -114,6 +120,7 @@ def main():
                 info.compress_type = zipfile.ZIP_DEFLATED
                 handle.writestr(info, data)
     archive(package)
+    live_report = {'checks': []}
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
         rebuilt = temporary / 'rebuilt.zip'
@@ -134,14 +141,25 @@ def main():
         for name, expected_data in files.items():
             if (install/name).read_bytes() != expected_data:
                 raise ValueError('installed source was modified by tests')
+        if version.get('required_live_checks'):
+            completed = subprocess.run([sys.executable, '-B', str(ROOT/'tools/live_probe.py'),
+                '--scripts', str(install/'brand-protection/scripts'),
+                '--checks', *version['required_live_checks']], cwd=ROOT, capture_output=True, text=True, timeout=90)
+            if completed.returncode:
+                raise RuntimeError('Public integration validation failed: ' + completed.stderr)
+            live_report = json.loads(completed.stdout)
+            if live_report.get('source_commit') != source or any(c.get('passed') is not True for c in live_report.get('checks', [])):
+                raise ValueError('Invalid live verification report')
+            if {c.get('name') for c in live_report.get('checks', [])} != set(version['required_live_checks']):
+                raise ValueError('Missing required live check')
     manifest = {'tag': tag, 'source_commit': source,
                 'files': [{'path': name, 'sha256': sha256(data)} for name, data in sorted(files.items())]}
     validation = {'tag': tag, 'source_commit': source, 'source_tests': source_count,
                   'installed_tests': installed_count, 'archive_files': len(files),
                   'relative_file_links_checked': links, 'original_mutations_per_suite': 1120,
                   'package_sha256': sha256(package.read_bytes()),
-                  'blank_template': True, 'monitoring_disabled': True,
-                  'scope': 'Synthetic contract tests only; no live sending, legal decision or scheduler assurance.'}
+                  'blank_template': True, 'monitoring_disabled': True, 'live_checks': live_report['checks'],
+                  'scope': 'Synthetic contracts and listed public probes only; no live sending, legal decision or scheduler assurance.'}
     for name, value in [('PACKAGE-MANIFEST.json', manifest), ('VALIDATION.json', validation)]:
         (out/name).write_text(json.dumps(value, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     install_text = (ROOT/'docs/installation.md').read_text(encoding='utf-8').replace('{{tag}}', tag)
@@ -150,7 +168,7 @@ def main():
     notes += '\n## 发布验证\n\n'
     notes += f'源码提交：`{source}`。源码与解压后的安装包各通过 {source_count} 项测试。\n\n'
     notes += f'安装包包含 {len(files)} 个文件。案件模板为空，持续跟进默认关闭。逐文件哈希见 `PACKAGE-MANIFEST.json`。\n\n'
-    notes += '测试使用合成数据。实际反馈读取、外发和定时运行需要在部署环境验收。\n'
+    notes += '回归测试使用合成数据。已执行的公开接口检查见 `VALIDATION.json`。实际反馈读取、外发和定时运行需要在部署环境验收。\n'
     (out/'RELEASE-NOTES.md').write_text(notes, encoding='utf-8')
     shipped = [package.name, 'INSTALL.md', 'PACKAGE-MANIFEST.json', 'VALIDATION.json']
     (out/'SHA256SUMS.txt').write_text(''.join(sha256((out/name).read_bytes())+'  '+name+'\n' for name in shipped), encoding='ascii')

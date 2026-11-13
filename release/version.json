@@ -1,1 +1,1 @@
-{"tag":"v1.1.0","previous":"v1.0.0","capability":"investigation-records","minimum_tests":105,"publication_revision":2}
+{"tag":"v1.2.0","previous":"v1.1.0","capability":"readonly-rdap","minimum_tests":118,"required_live_checks":["rdap"]}
