@@ -3,10 +3,12 @@ on:
   push:
     branches: [main]
     paths: ['release/version.json']
+  pull_request:
+    paths: ['release/version.json', 'tools/build_release.py', '.github/workflows/release.yml']
 permissions:
   contents: read
 concurrency:
-  group: verified-release
+  group: verified-release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   tests:
@@ -28,7 +30,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -B -m unittest discover -s tests -v
+      - name: Verify extracted package without publication credentials
+        if: matrix.python == '3.13' && runner.os == 'Linux'
+        run: python -B tools/build_release.py
   publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: ubuntu-22.04
     timeout-minutes: 10
