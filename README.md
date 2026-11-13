@@ -12,11 +12,13 @@ Skill 不提供后台常驻服务或自动群发程序。对外提交需要实�
 
 从 [GitHub Releases](https://github.com/zlxmygit/brand-protection-skills/releases) 选择已发布版本，下载独立的 `brand-protection-vX.Y.Z.zip` 和校验文件。不要把开发分支当作已验收版本。
 
+macOS、Windows 和 Linux 使用同一个安装包。脚本仅使用 Python 标准库，推荐 Python 3.13，不要求 WSL、Docker 或管理员权限。原生验证范围、路径和权限限制见[平台支持说明](skills/brand-protection/references/platform-support.md)。Windows Server 2025 的 CI 结果不能代替 Windows 10/11 或其他架构的实机验收。
+
 解压后，将完整的 `brand-protection/` 放入项目的 `.agents/skills/` 或用户目录的 `~/.agents/skills/`。下一层应直接包含 `SKILL.md`。升级前把旧目录移到扫描路径之外，再安装新目录。保留 `LICENSE`、`agents`、`assets`、`references` 和 `scripts`。
 
 刷新或重启宿主后，用 `$brand-protection` 调用。支持内置安装器的 Codex 环境也可使用 Release 标签对应的 Skill 地址。安装机制以宿主和 [OpenAI 官方说明](https://developers.openai.com/codex/skills)为准。
 
-辅助脚本需要 Python 3.9 及以上版本，仅使用标准库。完整安装、校验和回滚步骤见各版附件 `INSTALL.md`。本仓库的[安装文档](docs/installation.md)用于生成该附件。
+各版附件 `INSTALL.md` 分别提供 macOS / Linux 终端和 Windows PowerShell 的校验、安装及回滚步骤。本仓库的[安装文档](docs/installation.md)用于生成该附件。Python 3.9 只保留兼容回归，新部署应使用仍受维护的解释器。
 
 ## 快速开始
 
@@ -58,12 +60,14 @@ Skill 不提供后台常驻服务或自动群发程序。对外提交需要实�
 
 [空白案件模板](skills/brand-protection/assets/case-record.json)使用 `schema_version: 1.3`。数据版本与软件版本分开。调查结果通过可选扩展接入，旧案件不自动迁移。
 
-在仓库根目录运行只读校验：
+在 macOS 或 Linux 的仓库根目录运行只读校验：
 
 ```bash
-python3 skills/brand-protection/scripts/followup_queue.py --case /path/to/private-case/case-record.json
-python3 skills/brand-protection/scripts/investigation.py --case /path/to/private-case/case-record.json
+python3 skills/brand-protection/scripts/followup_queue.py --case "/path/to/private-case/case-record.json"
+python3 skills/brand-protection/scripts/investigation.py --case "/path/to/private-case/case-record.json"
 ```
+
+Windows 可在 PowerShell 使用 `py -3.13` 替换 `python3`，并将案件参数换成真实的本地路径。路径含空格时保留引号；不要将运行目录当作案件保存目录。
 
 脚本返回错误时，仍须查看保留的有效结果。空队列不代表案件完成；候选任务不代表获准外发。输出和迁移规则见[案件格式](skills/brand-protection/references/case-format.md)及[队列安全契约](skills/brand-protection/references/queue-safety.md)。
 
@@ -87,7 +91,7 @@ python3 skills/brand-protection/scripts/investigation.py --case /path/to/private
 
 ## 测试与发布
 
-v1.8.1 修复跨模块审计缺口。升级前阅读[兼容与校验说明](skills/brand-protection/references/audit-fixes.md)，尤其是审批快照重新复核和服务商目标归属要求。
+v1.8.3 补齐三个系统的原生验证。升级仍需遵守[审计修复要求](skills/brand-protection/references/audit-fixes.md)和[权利范围与证据父链说明](skills/brand-protection/references/residual-fixes.md)，不能自动更新旧审批哈希。
 
 在仓库根目录运行：
 
@@ -95,9 +99,9 @@ v1.8.1 修复跨模块审计缺口。升级前阅读[兼容与校验说明](skil
 python3 -B -m unittest discover -s tests -v
 ```
 
-原有 76 项回归包含审计反例、恢复与去重检查，以及一项执行 1,120 次字段变异的测试。新功能另加专项测试；当前数量和结果以对应提交的 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions)为准。
+Windows 对应命令为 `py -3.13 -B -m unittest discover -s tests -v`。原有回归、1,120 次队列字段变异和 4,440 个跨模块变体继续保留。当前数量和结果以对应提交的 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions)为准；平台专属跳过项不计作通过。
 
-每次只交付一项新增能力。PR 测试通过后合并；主分支再验证源码、解压安装包和本版要求的公开接口。上传到草稿 Release 后重新下载核对，全部通过才公开发布。
+每次只交付一项新增能力。PR 测试通过后合并；主分支再验证源码、解压安装包和本版要求的公开接口。发布矩阵分别在两种 Mac、Windows 和两种 Ubuntu 上检查解压包。上传到草稿 Release 后重新下载核对，全部通过才公开发布。
 
 发布包只含[白名单文件](release/skill-files.json)。每版提供 `INSTALL.md`、`VALIDATION.json`、`PACKAGE-MANIFEST.json` 和 `SHA256SUMS.txt`。测试不证明真实投诉、法律结论或后台调度已经验收。
 
