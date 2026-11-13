@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ['release/version.json']
   pull_request:
-    paths: ['release/version.json', 'tools/build_release.py', '.github/workflows/release.yml']
+    paths: ['release/version.json', 'tools/**', '.github/workflows/release.yml']
 permissions:
   contents: read
 concurrency:
@@ -57,17 +57,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG=$(python -c 'import json; print(json.load(open("release/version.json"))["tag"])')
-          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
-            echo 'Refusing to replace an existing release.'
-            exit 1
-          fi
-          EXISTING=$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
-          if [[ -n "$EXISTING" && "$EXISTING" != "$SOURCE" ]]; then
-            echo 'Tag does not match tested source.'
-            exit 1
-          fi
-          if [[ -z "$EXISTING" ]]; then
+          python -B tools/release_preflight.py > preflight.json
+          TAG=$(python -c 'import json; print(json.load(open("preflight.json"))["tag"])')
+          EXISTS=$(python -c 'import json; print(str(json.load(open("preflight.json"))["tag_exists"]).lower())')
+          if [[ "$EXISTS" == 'false' ]]; then
             gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE"
           fi
           gh release create "$TAG" --repo "$GH_REPO" --verify-tag --draft \
