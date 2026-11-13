@@ -32,7 +32,7 @@ jobs:
       - run: python -B -m unittest discover -s tests -v
       - name: Verify extracted package without publication credentials
         if: matrix.python == '3.13' && runner.os == 'Linux'
-        run: python -B tools/build_release.py
+        run: python -B tools/build_release.py --live
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: tests
@@ -48,7 +48,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Build and verify the installed package
-        run: python -B tools/build_release.py
+        run: python -B tools/build_release.py --live
       - name: Publish only after download verification
         env:
           GH_TOKEN: ${{ github.token }}
