@@ -2,7 +2,7 @@
 import hashlib
 
 from record_integrity import (MAX_DEPENDENCIES, MAX_RECORDS, check_identity,
-                              identifier, references, record_targets)
+                              identifier, references, record_targets, review_right_scope)
 
 TOTAL_BYTES = 50 * 1024 * 1024
 
@@ -27,7 +27,7 @@ def resolve(case, action, targets, evidence, providers, root, index, read_file):
     materials = index(case, 'materials')
     if any(len(rows) > MAX_RECORDS for rows in (evidence, materials, all_rights, all_parties)):
         raise ValueError('Record dependency index limit exceeded')
-    right_ids = references(action, 'right_ids') if 'right_ids' in action else sorted(all_rights)
+    right_ids = review_right_scope(case, action, all_rights)
     if not right_ids:
         raise ValueError('Record the rights relied upon by this action')
     rights, party_ids = {}, set()

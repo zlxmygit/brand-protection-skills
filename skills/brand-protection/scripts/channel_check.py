@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import text, timestamp, ids, read_json
 from submission_review import indexed
-from record_integrity import check_identity, evidence_closure, provider_binding
+from record_integrity import check_identity, evidence_closure, provider_binding, review_right_scope
 
 PROFILE = Path(__file__).resolve().parents[1] / 'assets/channels/cloudflare-copyright.json'
 
@@ -46,6 +46,7 @@ def check(case, action_id, now=None):
             raise ValueError('Unknown action')
         action = actions[action_id]
         check_identity(case, action, 'action')
+        review_right_scope(case, action, rights)
         review = action.get('channel_review')
         if not isinstance(review, dict) or review.get('profile_id') != profile['id']:
             raise ValueError('Expected a recorded review for this channel profile')
@@ -108,6 +109,7 @@ def check(case, action_id, now=None):
             holder = text(right.get('holder_party_id'), 'holder_party_id', 200)
             if holder not in parties:
                 raise ValueError('Record the rights holder in this case')
+            check_identity(case, parties[holder], 'rights holder')
             text(right.get('specific_work'), 'specific_work')
             text(right.get('original_reference'), 'original_reference')
             text(mapping.get('location_description'), 'location_description')

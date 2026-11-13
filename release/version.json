@@ -1,1 +1,1 @@
-{"tag":"v1.8.1","previous":"v1.8.0","capability":"audited-safety-contract-fixes","minimum_tests":313,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.8.2","previous":"v1.8.1","capability":"cross-module-rights-and-lineage-repair","minimum_tests":357,"required_live_checks":["rdap","capture"]}
