@@ -7,7 +7,7 @@
   "references/intake.md", "references/legal-regions.md", "references/online-channels.md",
   "references/patents-designs.md", "references/queue-safety.md",
   "references/investigation.md", "references/tools.md", "references/rdap.md", "references/capture.md",
-  "references/evidence-export.md", "references/submission-review.md", "references/channel-check.md",
+  "references/evidence-export.md", "references/submission-review.md", "references/channel-check.md", "references/dashboard.md",
   "scripts/followup_queue.py", "scripts/investigation.py", "scripts/rdap_lookup.py", "scripts/capture_web.py",
-  "scripts/evidence_export.py", "scripts/submission_review.py", "scripts/channel_check.py"
+  "scripts/evidence_export.py", "scripts/submission_review.py", "scripts/channel_check.py", "scripts/case_dashboard.py"
 ]
