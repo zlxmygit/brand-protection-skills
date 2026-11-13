@@ -1,0 +1,90 @@
+name: Verified release
+on:
+  push:
+    branches: [main]
+    paths: ['release/version.json']
+  pull_request:
+    paths: ['release/version.json', 'tools/build_release.py', '.github/workflows/release.yml']
+permissions:
+  contents: read
+concurrency:
+  group: verified-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  tests:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04]
+        python: ['3.9', '3.11', '3.13', '3.14']
+        include:
+          - os: windows-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -B -m unittest discover -s tests -v
+      - name: Verify extracted package without publication credentials
+        if: matrix.python == '3.13' && runner.os == 'Linux'
+        run: python -B tools/build_release.py
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Build and verify the installed package
+        run: python -B tools/build_release.py
+      - name: Publish only after download verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=$(python -c 'import json; print(json.load(open("release/version.json"))["tag"])')
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo 'Refusing to replace an existing release.'
+            exit 1
+          fi
+          EXISTING=$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null || true)
+          if [[ -n "$EXISTING" && "$EXISTING" != "$SOURCE" ]]; then
+            echo 'Tag does not match tested source.'
+            exit 1
+          fi
+          if [[ -z "$EXISTING" ]]; then
+            gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE"
+          fi
+          gh release create "$TAG" --repo "$GH_REPO" --verify-tag --draft \
+            --title "Brand Protection Skill $TAG" --notes-file "dist/RELEASE-NOTES.md" \
+            "dist/brand-protection-$TAG.zip" dist/INSTALL.md dist/PACKAGE-MANIFEST.json \
+            dist/VALIDATION.json dist/SHA256SUMS.txt
+          gh release download "$TAG" --repo "$GH_REPO" --dir downloaded --pattern '*'
+          cmp dist/SHA256SUMS.txt downloaded/SHA256SUMS.txt
+          (cd downloaded && sha256sum -c SHA256SUMS.txt)
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq '.object.sha')" = "$SOURCE"
+          gh release edit "$TAG" --repo "$GH_REPO" --draft=false --prerelease=false --latest
+          gh api "repos/$GH_REPO/releases/tags/$TAG" > published.json
+          python - <<'PY'
+          import json
+          data = json.load(open('published.json'))
+          assert not data['draft'] and not data['prerelease'] and data['published_at']
+          assert len(data['assets']) == 5
+          assert all(a['state'] == 'uploaded' for a in data['assets'])
+          print(data['html_url'])
+          PY
