@@ -2,12 +2,14 @@
   "LICENSE", "SKILL.md", "agents/openai.yaml",
   "assets/case-record.json", "assets/complaint-templates.md", "assets/follow-up-policy.json",
   "assets/intake-form.md", "assets/monitoring-prompt.md", "assets/submission-approval.json",
-  "assets/channels/cloudflare-copyright.json",
+  "assets/channels/cloudflare-copyright.json", "assets/consumer-templates.json", "assets/consumer-approval.json",
   "references/case-format.md", "references/evidence.md", "references/follow-up.md",
   "references/intake.md", "references/legal-regions.md", "references/online-channels.md",
   "references/patents-designs.md", "references/queue-safety.md",
   "references/investigation.md", "references/tools.md", "references/rdap.md", "references/capture.md",
   "references/evidence-export.md", "references/submission-review.md", "references/channel-check.md", "references/dashboard.md",
+  "references/consumer-materials.md",
   "scripts/followup_queue.py", "scripts/investigation.py", "scripts/rdap_lookup.py", "scripts/capture_web.py",
-  "scripts/evidence_export.py", "scripts/submission_review.py", "scripts/channel_check.py", "scripts/case_dashboard.py"
+  "scripts/evidence_export.py", "scripts/submission_review.py", "scripts/channel_check.py", "scripts/case_dashboard.py",
+  "scripts/consumer_materials.py"
 ]

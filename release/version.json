@@ -1,1 +1,1 @@
-{"tag":"v1.7.0","previous":"v1.6.0","capability":"readonly-case-dashboard","minimum_tests":223,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.8.0","previous":"v1.7.0","capability":"consumer-communication-drafts","minimum_tests":245,"required_live_checks":["rdap","capture"]}

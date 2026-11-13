@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "case_id": null,
+  "brand_id": null,
+  "snapshot_sha256": null,
+  "reviewed_by": null,
+  "authorization_source": null,
+  "approved_at": null,
+  "expires_at": null,
+  "checks": {
+    "official_channels_reviewed": false,
+    "public_text_reviewed": false,
+    "privacy_reviewed": false
+  }
+}
