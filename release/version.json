@@ -1,1 +1,1 @@
-{"tag":"v1.5.0","previous":"v1.4.0","capability":"submission-review","minimum_tests":182,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.6.0","previous":"v1.5.0","capability":"cloudflare-copyright-profile","minimum_tests":201,"required_live_checks":["rdap","capture"]}
