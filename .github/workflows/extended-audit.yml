@@ -1,0 +1,37 @@
+name: Extended independent audit
+on:
+  push:
+    branches: [audit/v1.8.0-atomic-20261113]
+permissions:
+  contents: read
+jobs:
+  mutation:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04]
+        python: ['3.9','3.13']
+        include:
+          - os: windows-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify audited production source is unchanged
+        shell: bash
+        run: git diff --exit-code 93c23f483bdd77d728c451343b894e15dae3db4a HEAD -- skills tests tools release docs .agents README.md AGENTS.md
+      - name: Probe bounded mutations and inspect remaining documents
+        env:
+          PRINT_DOCUMENTS: ${{ matrix.python == '3.13' && runner.os == 'Linux' && '1' || '0' }}
+        run: python -B audit/extended_probes.py
+      - name: Prove tracked files unchanged
+        if: always()
+        shell: bash
+        run: git diff --exit-code
