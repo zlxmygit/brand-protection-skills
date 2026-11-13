@@ -27,6 +27,7 @@
   "references/patents-designs.md",
   "references/queue-safety.md",
   "references/rdap.md",
+  "references/residual-fixes.md",
   "references/submission-review.md",
   "references/tools.md",
   "scripts/capture_web.py",
