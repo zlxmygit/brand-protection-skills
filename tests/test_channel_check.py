@@ -22,7 +22,7 @@ def fixture():
             'rights':[{'id':'r1','type':'copyright','brand_id':'b1','holder_party_id':'p1',
                        'specific_work':'Synthetic product photograph','original_reference':'Original private file reference'}],
             'evidence':[{'id':'e1'}],
-            'providers':[{'id':'cf','organization':'Cloudflare','role':'reverse_proxy',
+            'providers':[{'id':'cf','target_id':'t1','organization':'Cloudflare','role':'reverse_proxy',
                           'verified_at':'2026-11-13T02:00:00Z','attribution_evidence_ids':['e1']}],
             'actions':[{'id':'a1','provider_id':'cf','target_ids':['t1'],'channel_review':{
                 'profile_id':profile['id'], 'policy_url':profile['policy_url'],'report_url':profile['report_url'],

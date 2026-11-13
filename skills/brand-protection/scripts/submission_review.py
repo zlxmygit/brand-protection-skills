@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import text, timestamp, ids, index_rows, read_json
 from evidence_export import digest, read_evidence
 from capture_web import private_root
+from record_integrity import correction_family
+from submission_dependencies import resolve as resolve_dependencies
 
 OPERATIONS = {'initial_notice', 'remind', 'resubmit', 'send_supplement', 'send_escalation', 'send_correction'}
 PENDING = {'prepared', 'in_flight', 'outcome_unknown'}
@@ -29,31 +31,7 @@ def indexed(case, section):
 
 
 def family(actions, action_id):
-    graph = {key: set() for key in actions}
-    for key, action in actions.items():
-        parent = action.get('corrects_action_id')
-        if parent is None:
-            continue
-        text(parent, 'corrects_action_id', 200)
-        if parent not in actions or parent == key:
-            raise ValueError('Invalid correction reference')
-        seen, current = {key}, parent
-        while current is not None:
-            text(current, 'corrects_action_id', 200)
-            if current in seen or current not in actions:
-                raise ValueError('Invalid or cyclic correction reference')
-            seen.add(current)
-            current = actions[current].get('corrects_action_id')
-        graph[key].add(parent)
-        graph[parent].add(key)
-    found, pending = set(), [action_id]
-    while pending:
-        key = pending.pop()
-        if key in found:
-            continue
-        found.add(key)
-        pending.extend(graph[key] - found)
-    return found
+    return correction_family(actions, action_id)
 
 
 def snapshot(case, action_id, source_root):
@@ -75,15 +53,6 @@ def snapshot(case, action_id, source_root):
         raise ValueError('Unknown provider')
     for field in ('route', 'legal_or_policy_basis', 'requested_remedy', 'authorization_scope_and_source', 'signature_authority'):
         text(action.get(field), field)
-    rights, parties = indexed(case, 'rights'), indexed(case, 'parties')
-    if not rights or not parties:
-        raise ValueError('Record rights and parties before material review')
-    for right in rights.values():
-        if right.get('brand_id') != case['brand_id']:
-            raise ValueError('Right belongs to another or unconfirmed brand')
-        holder = text(right.get('holder_party_id'), 'holder_party_id', 200)
-        if holder not in parties:
-            raise ValueError('Right holder is not recorded in this case')
     claim_ids = ids(action.get('claim_evidence_ids'), 'claim_evidence_ids', allow_empty=False)
     payload = action.get('preflight_payload')
     if not isinstance(payload, dict) or payload.get('version') != '1.0':
@@ -114,29 +83,28 @@ def snapshot(case, action_id, source_root):
     if not content.strip() or '\x00' in content or '{{' in content or '}}' in content or '[PLACEHOLDER]' in content:
         raise ValueError('Body is empty or contains unresolved template markers')
     attachment_ids = ids(payload.get('attachment_ids'), 'attachment_ids')
-    selected = sorted(set(claim_ids + attachment_ids))
-    for key in selected:
-        if key not in evidence:
-            raise ValueError('Unknown claim or attachment evidence')
-        record = evidence[key]
-        if record.get('brand_id', case['brand_id']) != case['brand_id']:
-            raise ValueError('Evidence belongs to another brand')
-        read_evidence(root, record.get('original_path'), digest(record.get('sha256')))
+    try:
+        dependencies = resolve_dependencies(case, action, targets, evidence, providers, root, indexed, read_evidence)
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
+        # No approvable fingerprint is issued for an incomplete dependency set.
+        return {'sha256': None, 'complete': False, 'errors': [str(exc)]}
     material = {
         'case_id': case_id, 'brand_id': case['brand_id'], 'markets': case.get('markets', []),
         'action_id': action_id, 'target_ids': target_ids, 'targets': [targets[key] for key in sorted(target_ids)],
-        'provider': providers[provider_id], 'rights': [rights[key] for key in sorted(rights)], 'parties': [parties[key] for key in sorted(parties)],
+        'snapshot_version': '1.1', 'provider': providers[provider_id],
+        'rights': dependencies['rights'], 'parties': dependencies['parties'],
+        'materials': dependencies['materials'], 'verified_files': dependencies['verified_files'],
         'route': action['route'], 'basis': action['legal_or_policy_basis'], 'remedy': action['requested_remedy'],
         'authority': action['authorization_scope_and_source'], 'signature_authority': action['signature_authority'],
         'corrects_action_id': action.get('corrects_action_id'), 'claim_evidence_ids': claim_ids,
-        'evidence': [evidence[key] for key in selected], 'payload': payload,
-        'allegations': case.get('allegations', []), 'observations': case.get('observations', []),
+        'evidence': dependencies['evidence'], 'payload': payload,
+        'allegations': dependencies['allegations'], 'observations': dependencies['observations'],
         'follow_up_authorizations': case.get('follow_up', {}).get('authorizations') if isinstance(case.get('follow_up', {}), dict) else case.get('follow_up'),
     }
     if 'channel_review' in action:
         material['channel_review'] = action['channel_review']
     encoded = json.dumps(material, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('ascii')
-    return {'sha256': hashlib.sha256(encoded).hexdigest(), 'body_sha256': hashlib.sha256(body_bytes).hexdigest(),
+    return {'complete': True, 'snapshot_version': '1.1', 'sha256': hashlib.sha256(encoded).hexdigest(), 'body_sha256': hashlib.sha256(body_bytes).hexdigest(),
             'attachment_count': len(attachment_ids), 'operation': operation, 'dedupe_key': payload['dedupe_key']}
 
 
@@ -189,6 +157,8 @@ def review(case, action_id, approval, source_root, now=None):
         now = now.astimezone(timezone.utc)
         material = snapshot(case, action_id, source_root)
         report['snapshot'] = material
+        if material.get('complete') is not True:
+            raise ValueError('Incomplete approval dependencies: ' + '; '.join(material.get('errors', [])))
         check_state(case, action_id, material, now)
         if not isinstance(approval, dict) or approval.get('version') != '1.0':
             raise ValueError('A recorded version 1.0 approval is required')

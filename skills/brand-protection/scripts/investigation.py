@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import sys
 
+from record_integrity import check_identity, evidence_closure
+
 REGISTRATION = {'registered', 'not_found', 'unknown'}
 RELATIONSHIP = {'owned', 'authorized', 'third_party', 'unknown'}
 SIGNALS = {'brand_use', 'copied_content', 'impersonation', 'transaction',
@@ -154,6 +156,8 @@ def assess(case, now):
             target_id = text(row.get('target_id'), 'target_id', 200)
             if target_id not in targets:
                 raise ValueError('target_id: unknown or quarantined target')
+            check_identity(case, row, 'investigation result', {target_id})
+            check_identity(case, targets[target_id], 'target')
             name = domain_ascii(row.get('domain_ascii'))
             if targets[target_id].get('normalized_domain') != name:
                 raise ValueError('domain_ascii does not match the recorded target')
@@ -183,6 +187,7 @@ def assess(case, now):
             evidence_ids = ids(row.get('evidence_ids'), 'evidence_ids')
             if any(item not in evidence for item in evidence_ids):
                 raise ValueError('evidence_ids: unknown or quarantined evidence')
+            evidence_closure(case, evidence, evidence_ids, {target_id})
             asserted = registration != 'unknown' or relationship != 'unknown' or bool(signals)
             if asserted and not evidence_ids:
                 raise ValueError('recorded assertions require evidence references')

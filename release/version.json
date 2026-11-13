@@ -1,1 +1,1 @@
-{"tag":"v1.8.0","previous":"v1.7.0","capability":"consumer-communication-drafts","minimum_tests":245,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.8.1","previous":"v1.8.0","capability":"audited-safety-contract-fixes","minimum_tests":313,"required_live_checks":["rdap","capture"]}

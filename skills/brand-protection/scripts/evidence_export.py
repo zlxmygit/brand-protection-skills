@@ -18,6 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import text, timestamp, read_json, index_rows
 from capture_web import private_root, write_private
 
+from record_integrity import check_identity, evidence_closure
+
 FILE_LIMIT = 10 * 1024 * 1024
 TOTAL_LIMIT = 50 * 1024 * 1024
 
@@ -65,6 +67,7 @@ def prepare(case, review, source_root, now):
     case_id = text(case.get('case_id'), 'case_id', 200)
     if review.get('version') != '1.0' or review.get('case_id') != case_id:
         raise ValueError('Disclosure review does not match the case')
+    check_identity(case, review, 'disclosure review')
     for name in ('id', 'recipient', 'purpose', 'reviewed_by', 'authorization_source'):
         text(review.get(name), name)
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -90,6 +93,8 @@ def prepare(case, review, source_root, now):
         if key in seen or key not in evidence:
             raise ValueError('Unknown or repeated evidence selection')
         seen.add(key)
+        evidence_closure(case, evidence, [key])
+        check_identity(case, row, 'disclosure item')
         record = evidence[key]
         if row.get('disclosure_reviewed') is not True:
             raise ValueError('Each selected file needs an explicit disclosure review')

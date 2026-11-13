@@ -30,15 +30,40 @@ def fetch(domain, timeout):
     url = endpoint(domain)
     path = url.split(HOST, 1)[1]
     connection = http.client.HTTPSConnection(HOST, timeout=timeout, context=ssl.create_default_context())
+    response = None
     try:
         connection.request('GET', path, headers={'Accept': 'application/rdap+json',
-                           'Accept-Encoding': 'identity', 'User-Agent': 'brand-protection-skill/1.2'})
+                           'Accept-Encoding': 'identity', 'User-Agent': 'brand-protection-skill/1.8.1'})
         response = connection.getresponse()
+        media_type = response.getheader('Content-Type', '')
+        if response.status not in {200, 404}:
+            return response.status, media_type, b''
+        encoding = response.getheader('Content-Encoding', 'identity')
+        if not isinstance(encoding, str) or encoding.strip().lower() != 'identity':
+            raise ValueError('Encoded RDAP responses are not supported')
+        transfer = response.getheader('Transfer-Encoding')
+        length = response.getheader('Content-Length')
+        if transfer is not None:
+            if (not isinstance(transfer, str) or transfer.strip().lower() != 'chunked'
+                    or length is not None):
+                raise ValueError('Ambiguous or unsupported RDAP message framing')
+        expected = None
+        if length is not None:
+            if (not isinstance(length, str) or not length.isascii()
+                    or not length.isdigit() or len(length) > 20):
+                raise ValueError('Invalid RDAP Content-Length')
+            expected = int(length)
+            if expected > LIMIT:
+                raise ValueError('RDAP response exceeds 1 MiB')
         body = response.read(LIMIT + 1)
         if len(body) > LIMIT:
             raise ValueError('RDAP response exceeds 1 MiB')
-        return response.status, response.getheader('Content-Type', ''), body
+        if expected is not None and len(body) != expected:
+            raise ValueError('Incomplete RDAP response')
+        return response.status, media_type, body
     finally:
+        if response is not None:
+            response.close()
         connection.close()
 
 

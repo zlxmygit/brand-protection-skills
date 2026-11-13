@@ -33,3 +33,5 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Run queue, CLI, audit and mutation contracts
         run: python -B -m unittest discover -s tests -v
+      - name: Run bounded cross-module mutations and graph checks
+        run: python -B tests/extended_v18_probes.py

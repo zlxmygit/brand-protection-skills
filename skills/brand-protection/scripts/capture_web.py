@@ -169,6 +169,17 @@ def private_root(directory):
         raise ValueError('Private evidence directory must already exist')
     skill = Path(__file__).resolve().parents[1]
     protected = [skill] + [p for p in skill.parents if (p/'.git').exists()]
+    # Source archives have no .git. Recognize this project's exact layout and
+    # release marker, not an arbitrary ancestor containing a README.
+    if skill.parent.name == 'skills':
+        candidate = skill.parent.parent
+        if ((candidate/'skills/brand-protection').resolve() == skill
+                and (candidate/'release/skill-files.json').is_file()
+                and (candidate/'README.md').is_file()):
+            protected.append(candidate)
+        # Never write private results to a host's scanned Skill collection.
+        if skill.parent.parent.name in {'.agents', '.codex', '.claude'}:
+            protected.append(skill.parent)
     if any(root == p or p in root.parents for p in protected):
         raise ValueError('Evidence must be stored outside the Skill and repository')
     return root

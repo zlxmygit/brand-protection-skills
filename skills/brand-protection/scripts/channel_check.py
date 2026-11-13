@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import text, timestamp, ids, read_json
 from submission_review import indexed
+from record_integrity import check_identity, evidence_closure, provider_binding
 
 PROFILE = Path(__file__).resolve().parents[1] / 'assets/channels/cloudflare-copyright.json'
 
@@ -44,6 +45,7 @@ def check(case, action_id, now=None):
         if action_id not in actions:
             raise ValueError('Unknown action')
         action = actions[action_id]
+        check_identity(case, action, 'action')
         review = action.get('channel_review')
         if not isinstance(review, dict) or review.get('profile_id') != profile['id']:
             raise ValueError('Expected a recorded review for this channel profile')
@@ -81,6 +83,7 @@ def check(case, action_id, now=None):
         scope = ids(action.get('target_ids'), 'target_ids', allow_empty=False)
         if any(key not in targets for key in scope):
             raise ValueError('Unknown target in action scope')
+        provider_binding(case, provider, scope, evidence, checked, timestamp)
         mappings = review.get('work_mappings')
         if not isinstance(mappings, list) or not 1 <= len(mappings) <= 100:
             raise ValueError('Specific work-to-page mappings are required')
@@ -95,6 +98,8 @@ def check(case, action_id, now=None):
             if target_id not in scope or right_id not in rights:
                 raise ValueError('Work mapping is outside this action or case')
             target = targets[target_id]
+            check_identity(case, target, 'target')
+            check_identity(case, mapping, 'work mapping', {target_id})
             if url not in (target.get('supplied_url'), target.get('final_url')):
                 raise ValueError('Reported URL must match an explicitly recorded target page')
             right = rights[right_id]
@@ -109,6 +114,7 @@ def check(case, action_id, now=None):
             comparisons = ids(mapping.get('comparison_evidence_ids'), 'comparison_evidence_ids', allow_empty=False)
             if any(key not in evidence for key in comparisons):
                 raise ValueError('Comparison evidence is missing from this case')
+            evidence_closure(case, evidence, comparisons, {target_id})
             for key in comparisons:
                 if evidence[key].get('brand_id', brand_id) != brand_id:
                     raise ValueError('Comparison evidence belongs to another brand')
