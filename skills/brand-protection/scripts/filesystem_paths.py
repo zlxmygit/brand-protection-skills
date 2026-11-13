@@ -48,7 +48,9 @@ def checked_existing_path(value):
     supplied = supplied.absolute()
     for entry in (*reversed(supplied.parents), supplied):
         metadata = entry.lstat()
-        if stat.S_ISLNK(metadata.st_mode):
+        if entry.is_symlink() or stat.S_ISLNK(metadata.st_mode):
+            if sys.platform != 'darwin' or str(entry) not in SYSTEM_ALIASES:
+                raise ValueError('User-controlled symbolic links are not allowed')
             expected = system_alias_target(entry, os.readlink(entry), sys.platform,
                                            getattr(metadata, 'st_uid', None))
             if expected is None or entry.resolve(strict=True) != expected:

@@ -1,1 +1,1 @@
-{"tag":"v1.8.2","previous":"v1.8.1","capability":"cross-module-rights-and-lineage-repair","minimum_tests":357,"required_live_checks":["rdap","capture"]}
+{"tag":"v1.8.3","previous":"v1.8.2","capability":"native-cross-platform-support","minimum_tests":391,"required_live_checks":["rdap","capture"]}
