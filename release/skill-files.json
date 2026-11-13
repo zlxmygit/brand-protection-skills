@@ -6,5 +6,7 @@
   "references/intake.md", "references/legal-regions.md", "references/online-channels.md",
   "references/patents-designs.md", "references/queue-safety.md",
   "references/investigation.md", "references/tools.md", "references/rdap.md", "references/capture.md",
-  "scripts/followup_queue.py", "scripts/investigation.py", "scripts/rdap_lookup.py", "scripts/capture_web.py"
+  "references/evidence-export.md",
+  "scripts/followup_queue.py", "scripts/investigation.py", "scripts/rdap_lookup.py", "scripts/capture_web.py",
+  "scripts/evidence_export.py"
 ]
