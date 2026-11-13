@@ -1,1 +1,1 @@
-{"tag":"v1.2.0","previous":"v1.1.0","capability":"readonly-rdap","minimum_tests":118,"required_live_checks":["rdap"]}
+{"tag":"v1.3.0","previous":"v1.2.0","capability":"public-https-capture","minimum_tests":136,"required_live_checks":["rdap","capture"]}

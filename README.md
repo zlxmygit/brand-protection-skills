@@ -1,330 +1,108 @@
 # Brand Protection Skills
 
-**Reusable brand protection workflow for AI agents.** Collect brand and market inputs, organize evidence, prepare channel-specific complaints, and track authorized follow-up. No real brand materials or case records are included.
+## 项目用途
 
-面向品牌权利人及其授权团队的通用品牌维权 Agent Skill。把用户提供的品牌、目标市场、权利材料和疑似侵权线索，整理为可核验的证据、逐渠道投诉材料及可持续跟进的案件记录。
+`brand-protection` 帮助品牌权利人及授权团队整理证据、准备投诉，并跟进已纳入范围的案件。品牌、权利材料、市场和目标由使用者提供。公开仓库只保存通用规则、空白模板、脚本和合成测试。
 
-仓库目前提供一个 Skill：[`brand-protection`](skills/brand-protection/SKILL.md)。支持官网仿冒、素材复制、疑似假货、侵权商品链接、域名争议及相关进出口线索；品牌、国家、行业和资料位置均由用户填写，不预置任何实际品牌或案件。
+系统只有[一个主入口](skills/brand-protection/SKILL.md)。调查、取证和跟进共用私有案件记录。辅助工具按任务加载，不要求使用者管理多份品牌档案。
 
-Skill 保存工作方法、模板和只读辅助脚本。调查、反馈读取、提交与定时唤醒依赖运行环境提供的工具及用户授权。它本身不是后台服务，也不包含自动群发投诉程序。
+Skill 不提供后台常驻服务或自动群发程序。对外提交需要实际工具、证据及对应授权；定时检查还需要调度器和可读的反馈源。
 
-[贡献指南](CONTRIBUTING.md) · [使用与支持](SUPPORT.md) · [安全报告](SECURITY.md) · [社区规范](CODE_OF_CONDUCT.md) · [变更记录](CHANGELOG.md) · [MIT 许可证](LICENSE) · [反馈问题](https://github.com/zlxmygit/brand-protection-skills/issues/new/choose)
+## 下载与安装
 
-本项目采用 [MIT License](LICENSE)，版权署名为 `Copyright (c) 2026 zlxmygit`。允许商用、修改和分发，需保留版权及许可声明；完整条款以许可证正文为准。Skill 文件夹内也附带同一许可证，便于单独安装和分发。用户的私有品牌材料及案件记录不属于本仓库的许可交付物。
+从 [GitHub Releases](https://github.com/zlxmygit/brand-protection-skills/releases) 选择已发布版本，下载独立的 `brand-protection-vX.Y.Z.zip` 和校验文件。不要把开发分支当作已验收版本。
 
-## 内容导航
+解压后，将完整的 `brand-protection/` 放入项目的 `.agents/skills/` 或用户目录的 `~/.agents/skills/`。下一层应直接包含 `SKILL.md`。升级前把旧目录移到扫描路径之外，再安装新目录。保留 `LICENSE`、`agents`、`assets`、`references` 和 `scripts`。
 
-- [支持的工作](#支持的工作)
-- [安装与运行条件](#安装与运行条件)
-- [快速开始](#快速开始)
-- [准备哪些资料](#准备哪些资料)
-- [工作流程与交付物](#工作流程与交付物)
-- [持续跟进如何工作](#持续跟进如何工作)
-- [只读队列工具](#只读队列工具)
-- [案件数据与隐私](#案件数据与隐私)
-- [目录与参考文件](#目录与参考文件)
-- [验证与维护](#验证与维护)
-- [常见问题](#常见问题)
+刷新或重启宿主后，用 `$brand-protection` 调用。支持内置安装器的 Codex 环境也可使用 Release 标签对应的 Skill 地址。安装机制以宿主和 [OpenAI 官方说明](https://developers.openai.com/codex/skills)为准。
 
-## 支持的工作
-
-| 工作方向 | 主要内容 | 重要边界 |
-|---|---|---|
-| 材料与权利接入 | 分类商标、版权、专利、外观设计、授权及交易材料；整理主体、地域、期限与权利矩阵 | 文件名、持有证书和当前有效权利不是同一件事 |
-| 网页与交易取证 | 具体 URL、变体、跳转、页面上下文、原作品对照、时间及证据索引 | 低价、相似域名或未经授权销售不能单独证明售假 |
-| 服务商归属 | 分别确认注册商、注册局、DNS、CDN、源站、建站平台及支付服务 | CDN IP、平台风格或支付 Logo 只是线索 |
-| 版权与 DMCA | 逐项对应作品、被诉位置、权属链及通知声明；准备补证和反通知后的交接 | 商标争议、产品参数或泛称售假不能直接套入 DMCA |
-| 商标、仿冒与假货 | 商标使用、混淆/官方冒充、商品真伪证据和各平台 IP 流程 | 区分合法转售、授权、合理使用及相反证据 |
-| 专利与外观设计 | 权利要求/官方图样与具体产品对照，按地区及接收方选择路径 | 不把技术或设计权利包装成版权投诉 |
-| 平台、支付、搜索与广告 | 分别准备具体商品、账号、广告、交易或搜索产品的材料 | 各服务商只能在自身权限内采取措施 |
-| 域名争议 | UDRP、URS、适用 ccTLD 程序及有依据的 abuse/合规路径 | 暂停、移转、注销与赔偿是不同目标 |
-| 海关与法律升级 | 区分预先备案和已扣留紧急响应；整理货物、权利、通知及律师交接包 | 提交申请不等于已扣货，期限以适用规则和真实通知核验 |
-| 持续跟进与更正 | 回执、反馈、催办、补证、升级、效果复查、复发观察及错误投诉补救 | 无回应不会自动结案，也不会自动触发重复投诉 |
-
-地区参考目前整理了美国、加拿大、欧盟、英国及部分其他入口。用户可以指定其他市场，Skill 会要求核查当地官方规则；通用品牌输入不表示已经内置全球所有法律和行业结论。
-
-## 安装与运行条件
-
-### 在 Codex 中安装
-
-如果当前环境提供内置 `$skill-installer`，可以直接请求：
-
-```text
-使用 $skill-installer 安装以下 GitHub 仓库中的 Skill：
-https://github.com/zlxmygit/brand-protection-skills/tree/main/skills/brand-protection
-```
-
-也可以下载本仓库，或执行：
-
-```bash
-git clone https://github.com/zlxmygit/brand-protection-skills.git
-```
-
-手动安装时复制整个 `skills/brand-protection` 文件夹，保留 `assets`、`references`、`scripts` 和 `agents`。当前官方文档列出的 Codex 本地发现位置包括：
-
-| 使用范围 | 安装位置 |
-|---|---|
-| 当前项目 | `<项目目录>/.agents/skills/brand-protection/` |
-| 当前用户的所有项目 | `~/.agents/skills/brand-protection/` |
-
-安装器可能管理环境特定的 Skills 路径，以实际安装结果为准。更新已有安装前保留备份，避免在多个扫描位置留下同名旧副本。安装后用 `$brand-protection` 调用；若未被识别，检查目录层级和宿主的刷新/重启要求。安装与发现机制参考 [OpenAI 官方 Skills 文档](https://learn.chatgpt.com/docs/build-skills)。
-
-本仓库交付独立 Skill 文件夹，没有插件清单或捆绑 MCP 服务。其他支持 `SKILL.md` 的 Agent 可以评估接入，但本仓库没有验证所有客户端的工具、权限和调度兼容性。
-
-### 按任务提供运行能力
-
-| 需要做的事 | 环境要求 |
-|---|---|
-| 阅读流程、准备草稿 | 能加载 Skill，能访问用户授权的材料 |
-| 官方规则查询、公开取证 | 网络/浏览器能力；截图、PDF 或 OCR 工具按材料需要提供 |
-| 运行队列及测试 | Python 3.9+；脚本仅使用标准库，无第三方运行依赖；已验证 Python 3.9.6 |
-| 查询投诉反馈 | 能访问指定邮箱、工单或门户的已授权连接器/工具 |
-| 对外提交或回复 | 可用的提交工具，以及对应接收方、材料、声明和行为的实际授权 |
-| 周期巡检 | 可用调度器、持续可读的私有记录和反馈来源，以及对应运行环境 |
-
-只准备材料时不需要先配置邮箱或调度。单独运行 Python 队列也不会访问网络、登录服务商、发信或写回案件。
+辅助脚本需要 Python 3.9 及以上版本，仅使用标准库。完整安装、校验和回滚步骤见各版附件 `INSTALL.md`。本仓库的[安装文档](docs/installation.md)用于生成该附件。
 
 ## 快速开始
 
-### 1. 整理新品牌并准备投诉
+新案件可以直接使用自然语言输入，无需重复填写已经提供的信息。
 
 ```text
 使用 $brand-protection。
-品牌名称：我的品牌
+品牌名称：填写你的品牌
 官方网站：https://brand.example
-目标市场：美国、加拿大、德国、英国
-资料位置：我授权读取的本地资料目录或附件
+目标市场：填写国家或地区
+资料位置：已授权读取的私有目录或附件
 疑似侵权链接：https://suspected.example/products/item
-处理目标：删除已核实的侵权页面，并评估其他可用渠道
-本次范围：读取资料、公开核查、整理证据和投诉草稿，暂不提交
-案件保存位置：共享仓库之外的私有目录
+本次范围：整理资料、公开核查和起草，暂不提交
+案件保存位置：公开仓库和安装目录之外的私有目录
 ```
 
-上述 `.example` 地址仅用于说明。也可以填写 [品牌与市场表单](skills/brand-protection/assets/intake-form.md)。已经在对话中提供的信息会被复用；没有证书或尚未选定具体国家时，可以先归档、取证并列出依赖这些信息的缺口。
+`.example` 域名仅用于说明。你也可以填写[品牌与市场表单](skills/brand-protection/assets/intake-form.md)。没有完整证书时，可先归档和取证；依赖权利依据的主张保留为待审草稿。
 
-### 2. 跟进已经提交的案件
+继续已有案件时，指定原案件、反馈来源和允许的行为。只授权查询和起草时，外发内容仍是草稿。停止工作不等于授权向外撤回已发通知。
 
-```text
-使用 $brand-protection 继续处理我指定的私有案件记录。
-核对原工单的最新反馈、正式期限和网站实际状态，更新下一步。
-允许读取的反馈源：指定邮箱线程或工单入口
-持续周期：每 6 小时查反馈，每天复查已登记目标
-允许的外发范围：填写具体原工单、可发送内容及可披露附件
-其他外发、签名、费用和法律程序：按既有授权记录处理
-```
+## 选择工作方法
 
-如果只授权查询和起草，催办材料会保留为草稿。已有明确授权会入账，无需每轮重复填写；新增接收方、法律主张、签名、费用或程序应核对是否仍在授权范围。
-
-### 3. 更正已发出的错误通知
-
-```text
-使用 $brand-protection。
-新证据表明原投诉中的指定主张有误，请保留原记录、停止该主张后续催办，
-列出已通知的所有渠道，分别准备更正或撤回材料，暂不发送。
-```
-
-更正使用独立行动关联原通知，原案件关闭不会让补救事项消失。用户仅要求停止工作或监测，不自动等于授权发送撤回通知。
-
-## 准备哪些资料
-
-| 输入 | 用途 | 暂缺时如何处理 |
+| 任务 | 入口 | 处理范围 |
 |---|---|---|
-| 品牌、官方域名、权利人/代理关系 | 界定对象、主体和权限 | 保留来源与待核字段，不继承其他品牌资料 |
-| 目标国家或地区 | 选择权利及程序 | 可先记录“欧洲”等原文，路径依赖具体国家时再澄清 |
-| 商标、版权、专利/设计、许可/转让文件 | 建立权利矩阵及作品/产品对照 | 继续独立取证；相关法律主张保留条件式草稿 |
-| 具体 URL、商品/卖家/广告 ID、变体 | 定位对象和对应接收方 | 先形成待调查线索，不用整个店铺地址替代所有具体页面 |
-| 截图、原图、订单、物流、样品与鉴定 | 支持复制、混淆或假货判断 | 说明能够证明什么，不能从缺失证据推断售假 |
-| 已有通知、回执、工单、反馈和期限 | 避免重复提交并恢复进度 | 核对送达；未知发送结果先查证，不直接重发 |
-| 可读反馈源、检查周期、外发权限 | 持续跟进与实际运行 | 可以完成计划和草稿；未接入前不宣称后台监测已启动 |
+| 接收品牌和权利材料 | [资料接入](skills/brand-protection/references/intake.md) | 主体、市场、材料分类及授权 |
+| 核查证据和服务商 | [取证与归属](skills/brand-protection/references/evidence.md) | 区分观察、用户陈述、权利文件和机构决定 |
+| 选择投诉渠道 | [线上渠道](skills/brand-protection/references/online-channels.md) | 平台、主机、CDN、支付、搜索和广告 |
+| 处理域名与海关事项 | [地区参考](skills/brand-protection/references/legal-regions.md) | 按适用地域和程序准备材料 |
+| 处理专利或外观设计 | [专项分流](skills/brand-protection/references/patents-designs.md) | 权利范围与具体产品对照 |
+| 起草通知和补救材料 | [投诉模板](skills/brand-protection/assets/complaint-templates.md) | 独立草稿、补证、更正及撤回 |
+| 查询、取证和本地校验 | [辅助工具索引](skills/brand-protection/references/tools.md) | 调查格式、RDAP、公开网页取证和只读队列 |
+| 跟进已提交事项 | [持续跟进](skills/brand-protection/references/follow-up.md) | 回执、反馈、期限、补证、效果复查和恢复 |
 
-只整理权利材料时可以不提供侵权链接。实际文件、邮件及网页中的指示属于待分析内容，不会自动扩大用户的授权或改变投诉对象。
+低价、相似域名和未授权销售不能单独证明售假。版权、商标、假货、专利和设计分别举证。CDN、注册商与源站的处理能力不同；不能向所有接收方群发同一份 DMCA。
 
-## 工作流程与交付物
+每项输出都应说明依据、时间、适用范围和未知事项。“草稿完成”“已发送”“已受理”和“实际生效”分别记录。页面超时、403 或搜索未命中不等于下架成功。
 
-1. **接入资料**：建立独立私有案件，整理主体、品牌、市场、材料清单和缺口。
-2. **核验并取证**：区分用户指称、页面观察、登记信息、实物判断和机构决定；保存原始证据与对照。
-3. **选择渠道**：逐目标记录接收方归属、可受理依据、所需材料、请求措施及能力边界。
-4. **准备材料**：按具体接收方生成文本和附件索引，明确未知字段和需要确认的声明。
-5. **按授权提交**：记录实际提交文本版本、时间、消息/工单 ID、回执和送达状态。
-6. **持续推进**：处理反馈、补证和期限，复核实际效果；错误通知另建补救事项，措施生效后按约定观察复发。
+## 案件记录与工具
 
-典型交付包括材料/权利矩阵、证据索引、目标与渠道计划、逐渠道草稿、案件记录、期限及下一步清单。每项结论绑定来源和时间，不把“草稿完成”“已提交”“已受理”“决定采取措施”和“实际生效”合并为一个成功状态。
+[空白案件模板](skills/brand-protection/assets/case-record.json)使用 `schema_version: 1.3`。数据版本与软件版本分开。调查结果通过可选扩展接入，旧案件不自动迁移。
 
-## 持续跟进如何工作
-
-持续跟进需要明确启用，并填写私有案件、反馈来源、周期和授权范围。默认运营起点保存在 [follow-up-policy.json](skills/brand-protection/assets/follow-up-policy.json)，可以按案件调整：
-
-| 项目 | 默认运营起点 |
-|---|---|
-| 反馈检查 | 每 6 小时 |
-| 已登记 URL/商品复查 | 每 24 小时 |
-| 未确认回执核对 | 提交尝试后 24 小时 |
-| 首次无回应跟进评估 | 确认送达后 72 小时 |
-| 后续催办间隔 | 上次确定成功发送后至少 168 小时 |
-| 连续无回应的路径复审 | 累计 2 次催办后的下一复查点 |
-| 措施生效复查 | 24 小时及 7 天 |
-| 已启用范围内的复发观察 | 每周 |
-
-这些数字是经过的小时数和运营起点，不是法律期限、服务商承诺或自动发送许可。正式通知、机构要求、渠道规则和已核实的处理窗口优先。补证、反通知、扣留通知及正式期限需要立即重排优先级。
-
-每轮先恢复状态、读取最新反馈，再复查目标和处理到期任务。核心保护包括：
-
-- 坏记录单独报错，其他有效期限继续显示；空队列不等于案件完成。
-- 反馈读取失败、分页不完整或权限失效不视为“对方没有回复”。
-- 普通催办冷却与全部外发限制分开；延期和期限冲突明确列出。
-- `prepared`、`in_flight`、`outcome_unknown` 先核对送达；不能靠换轮次、行动或去重键绕过。
-- 发送前必须成功持久化相应状态；脚本本身不提供发送器、锁或事务保证。
-- 租约过期先核查原执行是否结束；确认中断后，只读检查和外发任务分别恢复。
-- 每个未结目标和已纳入渠道有下一步或可复核的阻塞；达到目标后按授权范围复查。
-
-实际定时运行需要接入宿主正式调度工具，并核验首次真实运行与写回。配置成功不等于执行成功。本地运行依赖设备、应用、文件和连接器可用；独立失联告警还需要独立观察来源。健康观察可记录为独立、人工或未配置，不能把同一失效设备上的另一个任务视为可靠的外部告警。
-
-详细协议见 [持续跟进](skills/brand-protection/references/follow-up.md)，接入提示见 [监测模板](skills/brand-protection/assets/monitoring-prompt.md)。
-
-## 只读队列工具
-
-在仓库根目录执行，将路径替换为仓库外的私有案件记录：
+在仓库根目录运行只读校验：
 
 ```bash
-python3 skills/brand-protection/scripts/followup_queue.py \
-  --case /path/to/private-case/case-record.json
+python3 skills/brand-protection/scripts/followup_queue.py --case /path/to/private-case/case-record.json
+python3 skills/brand-protection/scripts/investigation.py --case /path/to/private-case/case-record.json
 ```
 
-多案可以重复 `--case`；演练或历史复核可以指定带时区的检查时点和期限窗口：
+脚本返回错误时，仍须查看保留的有效结果。空队列不代表案件完成；候选任务不代表获准外发。输出和迁移规则见[案件格式](skills/brand-protection/references/case-format.md)及[队列安全契约](skills/brand-protection/references/queue-safety.md)。
 
-```bash
-python3 skills/brand-protection/scripts/followup_queue.py \
-  --case /path/to/private-case-a/case-record.json \
-  --case /path/to/private-case-b/case-record.json \
-  --now 2026-11-12T12:00:00+08:00 \
-  --horizon-hours 48
-```
+联网查询和网页取证需要明确网络权限。取证工具只向显式指定的私有目录写入证据，不修改案件。各工具的输入、错误处理和限制见辅助工具索引。
 
-`--now` 只改变筛选时点，不证明当时发生过真实读取或发送。`--horizon-hours` 控制已知期限提醒窗口，默认 48 个实际小时；不计算法定工作日，也不会改变正式期限。
+## 持续跟进
 
-| 输出字段 | 含义 |
-|---|---|
-| `due_tasks` | 到期候选；实际行动前仍需核对事实、权限和反馈 |
-| `held_tasks` | 因终态、未决发送、运行状态或数据问题等受阻的任务 |
-| `deferred_tasks` | 尚未达到执行时间及其限制依据 |
-| `deadline_alerts` | 窗口内的已知临近或过期期限 |
-| `unresolved_deadlines` | 缺失或无效、需要核实的期限 |
-| `deadline_conflicts` | 任务阻塞/延期与已知期限的冲突 |
-| `recovery_tasks` | 运行核查、只读改排、送达核对或阻塞复核候选 |
-| `coverage_gaps` | 已登记目标、渠道与下一步之间的缺口 |
-| `errors` / `warnings` | 按记录报告的错误及旧格式提示 |
+跟进需明确启用，并指定案件、周期、反馈源和授权范围。运营起点在[跟进策略](skills/brand-protection/assets/follow-up-policy.json)中：每 6 小时查反馈，每天复查目标，首次无回应跟进评估为确认送达后 72 小时。后续周期服从真实通知和服务商规则。
 
-正常执行返回 `0`；文件或记录错误返回 `1`，仍须读取保留的有效结果；命令参数错误返回 `2`。输出含 `queue_only` 和 `requires_live_verification`，不能直接把外发候选当作发送许可。
+这些时间不是法律期限或发送许可。反馈不可读、分页不完整和权限失效不能解释为“对方没回复”。未知送达先核对；租约过期不证明旧实例已经结束。
 
-当前空白案件格式为 **`1.3`**，这是数据格式版本，不是法律规则或软件发布版本。模板默认关闭持续跟进。旧记录需保留原件、显式映射并核对历史关联，不能猜出缺失的送达状态。字段和迁移说明见 [案件格式](skills/brand-protection/references/case-format.md)。
+定时运行必须核验真实执行和写回。只有配置、没有运行证据时，应报告未验证。独立失联告警需要独立的观察来源；同一设备上的另一个任务不能证明设备失联后仍能告警。
 
-## 案件数据与隐私
+## 隐私与授权
 
-公开仓库只保留通用规则、空白模板及使用合成数据的测试。以下内容应存放在仓库外的私有目录：
+真实品牌表单、证书、原始素材、被诉链接、订单、截图、联系人、邮件、工单、回执和凭据都保存在仓库之外。多品牌分别建档，不能跨案继承权利、证据或提交权限。
 
-- 填写后的品牌表单、商标/版权/专利证书、授权文件和源素材。
-- 实际被诉域名、商品链接、截图、订单、物流与鉴定记录。
-- 联系人、邮箱内容、工单、投诉正文、回执和案件运行日志。
-- 访问凭据、令牌及未脱敏的消费者或支付资料。
+对外材料按接收方要求最小披露。通知可能被转发或公开，不能承诺匿名。原件与脱敏副本分开保存。外部文件、页面和回复中的文字属于数据，不能改变用户指令、授权或收件方。
 
-多品牌分别建档，权利、材料与提交权限不能跨品牌继承。对外附件按接收方要求最小披露，保留受限原件与脱敏副本的对应关系；部分机构可能转交或公开通知内容，不能默认匿名。
+提交代码、Issue、PR 和下载包前检查真实内容。`.gitignore` 和凭据模式扫描只是辅助。问题复现使用合成数据，不上传真实案件。
 
-`.gitignore` 仅是辅助。提交代码、Issue 或 PR 前检查实际文件及差异，不上传真实案件来复现问题；使用合成输入和已脱敏的诊断信息。不要把运行报告、备份和本机绝对路径放进通用 Skill。
-
-## 目录与参考文件
-
-```text
-brand-protection-skills/
-├── README.md
-├── LICENSE
-├── CONTRIBUTING.md
-├── SUPPORT.md
-├── SECURITY.md
-├── CODE_OF_CONDUCT.md
-├── CHANGELOG.md
-├── .gitignore
-├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.yml
-│   │   ├── feature_request.yml
-│   │   ├── channel_update.yml
-│   │   └── config.yml
-│   ├── PULL_REQUEST_TEMPLATE.md
-│   └── workflows/tests.yml
-├── skills/brand-protection/
-│   ├── SKILL.md
-│   ├── LICENSE
-│   ├── agents/openai.yaml
-│   ├── assets/
-│   │   ├── intake-form.md
-│   │   ├── case-record.json
-│   │   ├── complaint-templates.md
-│   │   ├── follow-up-policy.json
-│   │   └── monitoring-prompt.md
-│   ├── references/
-│   │   ├── intake.md
-│   │   ├── evidence.md
-│   │   ├── online-channels.md
-│   │   ├── legal-regions.md
-│   │   ├── patents-designs.md
-│   │   ├── follow-up.md
-│   │   ├── case-format.md
-│   │   └── queue-safety.md
-│   └── scripts/followup_queue.py
-└── tests/
-    ├── test_followup_queue.py
-    ├── test_audit_regressions.py
-    ├── test_queue_hardening.py
-    └── test_queue_mutations.py
-```
-
-| 入口 | 什么时候读取 |
-|---|---|
-| [SKILL.md](skills/brand-protection/SKILL.md) | 选择范围、核心判断、主流程与交付验收 |
-| [资料接入](skills/brand-protection/references/intake.md) | 新品牌、材料目录或旧案件接入 |
-| [证据与权利](skills/brand-protection/references/evidence.md) | 权利核验、取证、归属和披露 |
-| [线上渠道](skills/brand-protection/references/online-channels.md) | 平台、主机/CDN、支付、搜索及广告 |
-| [地区与海关](skills/brand-protection/references/legal-regions.md) | 域名程序、地区差异、扣留及法律升级 |
-| [专利与外观设计](skills/brand-protection/references/patents-designs.md) | 技术/设计权利与产品对照及专项分流 |
-| [持续跟进](skills/brand-protection/references/follow-up.md) | 恢复、反馈、发送、补救、调度与结案 |
-| [案件格式](skills/brand-protection/references/case-format.md) | 数据字段、队列输出与旧记录迁移 |
-| [队列安全契约](skills/brand-protection/references/queue-safety.md) | 审计修复的输入校验、关联、去重及兼容性约束 |
-| [投诉模板](skills/brand-protection/assets/complaint-templates.md) | 逐渠道草稿、催办、升级及更正/撤回 |
-
-## 验证与维护
+## 测试与发布
 
 在仓库根目录运行：
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -B -m unittest discover -s tests -v
 ```
 
-当前版本在 Python 3.9.6 下通过 **76 项本地测试**，保留最初 38 项回归，并加入审计反例、组合与顺序检查、严格输入处理及包含 1,120 次字段变异的测试。覆盖坏记录隔离、补证优先级、外发限制、未决发送与去重、运行恢复、更正行动、覆盖缺口、时区/时间边界、多案隔离及输入不变性。首次公开基线另完成 3 组合成场景走读：未决发送与紧急补证并存、已关闭案件的逐渠道更正、英国扣留与权利地域缺口。
+原有 76 项回归包含审计反例、恢复与去重检查，以及一项执行 1,120 次字段变异的测试。新功能另加专项测试；当前数量和结果以对应提交的 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions)为准。
 
-[CI 配置](.github/workflows/tests.yml)覆盖 Linux 多个 Python 版本与 Windows；各次提交的实际状态以 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions) 为准。
+每次只交付一项新增能力。PR 测试通过后合并；主分支再验证源码、解压安装包和本版要求的公开接口。上传到草稿 Release 后重新下载核对，全部通过才公开发布。
 
-上述验证针对本地脚本、规则和模板，不证明真实邮箱读取、外部提交、自然调度、独立健康观察或机构最终处置。接入真实案件时，仍需按对应环境完成实际运行验收。仓库不包含这次演练的案件记录或本机审计报告。
+发布包只含[白名单文件](release/skill-files.json)。每版提供 `INSTALL.md`、`VALIDATION.json`、`PACKAGE-MANIFEST.json` 和 `SHA256SUMS.txt`。测试不证明真实投诉、法律结论或后台调度已经验收。
 
-维护时保留入口简洁，将专项规则放到对应参考文件；修改行为后验证其可观察结果，修改法律/平台分流后核查官方来源及适用条件。参考资料的核验日期不代表永久有效，具体提交前仍以当前官方规则和真实通知为准。
+## 文档与维护
 
-## 常见问题
+中文文档按项目级 [zh-tech-writing](.agents/skills/zh-tech-writing/SKILL.md)维护。该 Skill 来自 `leter/zh-tech-writing`，保留来源和许可，仅用于开发，不进入品牌维权安装包。
 
-**安装后会自动投诉或定时检查吗？**
+版本说明见 [docs/releases](docs/releases)和[变更记录](CHANGELOG.md)。其他维护入口包括[贡献指南](CONTRIBUTING.md)、[使用与支持](SUPPORT.md)、[安全报告](SECURITY.md)和[社区规范](CODE_OF_CONDUCT.md)。
 
-不会。安装只提供能力。持续跟进需具体案件、反馈源、授权和可运行的调度器；队列本身只读。
-
-**能否保证全部侵权都下架？**
-
-不能保证第三方决定。Skill 要求每个纳入范围的未结事项有下一步，按证据持续推进；下架、付款限制、域名移转和海关措施分别核验，不能从一次访问失败推断处理成功。
-
-**没有注册证书可以先开始吗？**
-
-可以先整理、取证和形成条件式草稿。哪些权利和程序可用取决于具体法域与证据，不能用缺失字段冒充已登记权利，也不把登记设为所有版权通知的统一门槛。
-
-**对方不回复就重复提交吗？**
-
-先确认送达和反馈覆盖，按原工单、渠道规则及允许周期跟进。重提需要有据的条件；不通过重复投诉、换身份或改标签绕过处理决定。
-
-**已有案件升级到新格式会自动重发吗？**
-
-不会。队列不写回记录；迁移保留原件和历史，对关联不完整或送达不明的尝试先核对，再决定后续动作。
+本项目采用 [MIT License](LICENSE)，署名为 `Copyright (c) 2026 zlxmygit`。独立 Skill 包附带同一许可证。用户的私有材料不属于本仓库交付物。
