@@ -1,0 +1,31 @@
+{
+  "id": "cloudflare-copyright-v1",
+  "version": "1.0",
+  "verified_on": "2026-11-13",
+  "policy_url": "https://www.cloudflare.com/trust-hub/reporting-abuse/",
+  "report_url": "https://abuse.cloudflare.com/",
+  "sources": [
+    "https://www.cloudflare.com/trust-hub/reporting-abuse/",
+    "https://www.cloudflare.com/trust-hub/abuse-approach/"
+  ],
+  "roles": {
+    "reverse_proxy": {
+      "requests": ["forward_report"],
+      "boundary": "Ask for forwarding and available follow-up information; this role cannot delete origin content."
+    },
+    "hosting": {
+      "requests": ["hosted_removal_review"],
+      "boundary": "Request review of specifically identified hosted content; no guarantee of removal or lasting restrictions."
+    }
+  },
+  "required_notice_fields": [
+    "authorized_signature", "identified_original_work", "specific_reported_location",
+    "business_contact_address_phone_email", "good_faith_statement", "accuracy_and_authority_statement"
+  ],
+  "required_confirmations": [
+    "current_form_reviewed", "contact_fields_reviewed", "signature_authority_reviewed",
+    "good_faith_reviewed", "accuracy_authority_reviewed", "forwarding_disclosure_reviewed"
+  ],
+  "unsupported_in_this_profile": ["trademark", "counterfeit_only", "registrar", "cache_removal", "counter_notice"],
+  "authorizes_submission": false
+}

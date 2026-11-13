@@ -133,6 +133,8 @@ def snapshot(case, action_id, source_root):
         'allegations': case.get('allegations', []), 'observations': case.get('observations', []),
         'follow_up_authorizations': case.get('follow_up', {}).get('authorizations') if isinstance(case.get('follow_up', {}), dict) else case.get('follow_up'),
     }
+    if 'channel_review' in action:
+        material['channel_review'] = action['channel_review']
     encoded = json.dumps(material, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('ascii')
     return {'sha256': hashlib.sha256(encoded).hexdigest(), 'body_sha256': hashlib.sha256(body_bytes).hexdigest(),
             'attachment_count': len(attachment_ids), 'operation': operation, 'dedupe_key': payload['dedupe_key']}
