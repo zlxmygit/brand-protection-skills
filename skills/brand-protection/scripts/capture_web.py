@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Capture one explicitly scoped public HTTPS response as inert private evidence."""
 import argparse
+import base64
 from datetime import datetime, timezone
 import hashlib
 import http.client
 import ipaddress
+import io
 import json
 import math
 import os
@@ -12,6 +14,7 @@ from pathlib import Path
 import shutil
 import socket
 import ssl
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,6 +29,60 @@ LIMIT = 5 * 1024 * 1024
 HEADERS = ('content-type', 'content-length', 'content-encoding', 'location', 'date', 'etag', 'last-modified')
 REDIRECTS = {301, 302, 303, 307, 308}
 SECRET_KEYS = {'token', 'access_token', 'authorization', 'password', 'api_key', 'signature'}
+
+
+def remaining(deadline):
+    budget = deadline - time.monotonic()
+    if budget <= 0:
+        raise TimeoutError('HTTPS request deadline exceeded')
+    return budget
+
+
+class DeadlineReader(io.RawIOBase):
+    """One unbuffered socket operation at a time under an absolute deadline."""
+    def __init__(self, source, connection, deadline):
+        super().__init__()
+        self.source, self.connection, self.deadline = source, connection, deadline
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.connection.settimeout(remaining(self.deadline))
+        count = self.source.readinto(buffer)
+        remaining(self.deadline)
+        return count
+
+    def close(self):
+        if not self.closed:
+            try:
+                self.source.close()
+            finally:
+                super().close()
+
+
+class DeadlineSocket:
+    def __init__(self, connection, deadline):
+        self.connection, self.deadline = connection, deadline
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def makefile(self, mode, buffering=None):
+        if mode != 'rb':
+            raise ValueError('Only binary response reads are supported')
+        source = self.connection.makefile('rb', buffering=0)
+        return io.BufferedReader(DeadlineReader(source, self.connection, self.deadline))
+
+    def sendall(self, data):
+        view = memoryview(data)
+        while view:
+            self.connection.settimeout(remaining(self.deadline))
+            sent = self.connection.send(view)
+            if not sent:
+                raise OSError('HTTPS connection closed during request')
+            view = view[sent:]
+        remaining(self.deadline)
 
 
 def validate_url(url, allowed_hosts):
@@ -69,14 +126,18 @@ def public_addresses(host, resolver=socket.getaddrinfo):
 class PinnedHTTPS(http.client.HTTPSConnection):
     def __init__(self, host, address, timeout):
         self.address = address
+        self.deadline = time.monotonic() + timeout
         self.tls = ssl.create_default_context()
         self.tls.set_alpn_protocols(['http/1.1'])
         super().__init__(host, port=443, timeout=timeout, context=self.tls)
 
     def connect(self):
-        raw = socket.create_connection((self.address, 443), self.timeout)
+        raw = socket.create_connection((self.address, 443), remaining(self.deadline))
         try:
-            self.sock = self.tls.wrap_socket(raw, server_hostname=self.host)
+            raw.settimeout(remaining(self.deadline))
+            secured = self.tls.wrap_socket(raw, server_hostname=self.host)
+            self.sock = DeadlineSocket(secured, self.deadline)
+            remaining(self.deadline)
         except BaseException:
             raw.close()
             raise
@@ -84,6 +145,7 @@ class PinnedHTTPS(http.client.HTTPSConnection):
 
 def request_once(host, path, address, timeout):
     connection = PinnedHTTPS(host, address, timeout)
+    response = None
     try:
         connection.request('GET', path, headers={'Accept': 'text/html,text/plain',
                            'Accept-Encoding': 'identity', 'User-Agent': 'brand-protection-skill/1.3'})
@@ -95,6 +157,7 @@ def request_once(host, path, address, timeout):
                 text(value, 'response header', 4096)
                 headers[name] = value
         if response.status in REDIRECTS:
+            remaining(connection.deadline)
             return response.status, headers, b''
         if headers.get('content-encoding', 'identity').lower() != 'identity':
             raise ValueError('Compressed responses are not supported')
@@ -118,8 +181,11 @@ def request_once(host, path, address, timeout):
         body = b''.join(chunks)
         if 'content-length' in headers and len(body) != int(headers['content-length']):
             raise ValueError('Truncated response body')
+        remaining(connection.deadline)
         return response.status, headers, body
     finally:
+        if response is not None:
+            response.close()
         connection.close()
 
 
@@ -178,6 +244,16 @@ def private_root(directory):
         # Never write private results to a host's scanned Skill collection.
         if skill.parent.parent.name in {'.agents', '.codex', '.claude'}:
             protected.append(skill.parent)
+    # An installed copy can be invoked from a separate source checkout. Inspect
+    # the supplied destination too, using this exact repository layout rather
+    # than treating every README or private Git repository as public source.
+    for candidate in (root, *root.parents):
+        if ((candidate/'skills/brand-protection/SKILL.md').is_file()
+                and (candidate/'release/skill-files.json').is_file()
+                and (candidate/'README.md').is_file()):
+            protected.append(candidate)
+        if candidate.name == 'skills' and candidate.parent.name in {'.agents', '.codex', '.claude'}:
+            protected.append(candidate)
     if any(root == p or p in root.parents for p in protected):
         raise ValueError('Evidence must be stored outside the Skill and repository')
     return root
@@ -191,10 +267,62 @@ def write_private(path, data):
         os.fsync(handle.fileno())
 
 
-def capture(url, target_id, directory, allowed_hosts, **options):
+def bounded_collect(url, allowed_hosts, *, total_timeout=30, **options):
+    """Bound worker startup, DNS, all hops and collection; the worker never writes."""
+    if (isinstance(total_timeout, bool) or not isinstance(total_timeout, (int, float))
+            or not math.isfinite(total_timeout) or not 0 < total_timeout <= 120):
+        raise ValueError('total_timeout must be positive and at most 120 seconds')
+    if set(options) - {'allow_network', 'timeout', 'max_redirects'}:
+        raise ValueError('Bounded collection does not accept injected transports')
+    if options.get('allow_network') is not True:
+        raise ValueError('Explicit network permission is required')
+    request = json.dumps({'url':url, 'allowed_hosts':list(allowed_hosts), **options},
+                         ensure_ascii=True, allow_nan=False).encode('ascii')
+    if len(request) > 65536:
+        raise ValueError('Capture request exceeds worker input limit')
+    try:
+        completed = subprocess.run([sys.executable, '-I', '-B', str(Path(__file__).resolve()),
+                                    '--collect-worker'], input=request, capture_output=True,
+                                   timeout=total_timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError('Capture collection deadline exceeded') from exc
+    if completed.returncode or len(completed.stdout) > 8 * 1024 * 1024:
+        raise ValueError('Capture worker failed')
+    payload = json.loads(completed.stdout)
+    body = base64.b64decode(payload['body_base64'], validate=True)
+    metadata = payload['observation']
+    if not isinstance(metadata, dict) or len(body) > LIMIT:
+        raise ValueError('Invalid capture worker result')
+    metadata.setdefault('limitations', []).append(
+        'Collection deadline covers worker startup, DNS, all HTTP hops and return; not final filesystem persistence')
+    return metadata, body
+
+
+def collect_worker():
+    try:
+        raw = sys.stdin.buffer.read(65537)
+        if len(raw) > 65536:
+            raise ValueError('Capture worker input too large')
+        request = json.loads(raw)
+        metadata, body = collect(request['url'], request['allowed_hosts'],
+                                 allow_network=request.get('allow_network'),
+                                 timeout=request.get('timeout', 10),
+                                 max_redirects=request.get('max_redirects', 0))
+        print(json.dumps({'observation':metadata, 'body_base64':base64.b64encode(body).decode('ascii')},
+                         ensure_ascii=True, allow_nan=False))
+        return 0
+    except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
+        print(json.dumps({'errors':['capture_failed_or_out_of_scope']}))
+        return 1
+
+
+def capture(url, target_id, directory, allowed_hosts, *, total_timeout=None, **options):
     text(target_id, 'target_id', 200)
     root = private_root(directory)
-    metadata, body = collect(url, allowed_hosts, **options)
+    if total_timeout is None:
+        metadata, body = collect(url, allowed_hosts, **options)
+    else:
+        metadata, body = bounded_collect(url, allowed_hosts, total_timeout=total_timeout, **options)
     destination = Path(tempfile.mkdtemp(prefix='capture-', dir=root))
     try:
         body_path = destination/'body.bin'
@@ -223,12 +351,15 @@ def main():
     parser.add_argument('--allow-host', required=True, action='append')
     parser.add_argument('--allow-network', action='store_true')
     parser.add_argument('--timeout', type=float, default=10)
+    parser.add_argument('--total-timeout', type=float, default=30,
+                        help='Collection worker wall-clock budget in seconds, including DNS and redirects (max 120)')
     parser.add_argument('--max-redirects', type=int, default=0)
     args = parser.parse_args()
     try:
         result = capture(args.url, args.target_id, args.output_root, args.allow_host,
-                         allow_network=args.allow_network, timeout=args.timeout, max_redirects=args.max_redirects)
-    except (OSError, ValueError, TypeError, http.client.HTTPException):
+                         allow_network=args.allow_network, timeout=args.timeout, max_redirects=args.max_redirects,
+                         total_timeout=args.total_timeout)
+    except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
         print(json.dumps({'errors': ['capture_failed_or_out_of_scope'], 'authorizes_submission': False}))
         return 1
     print(json.dumps(result, ensure_ascii=True, allow_nan=False, indent=2))
@@ -236,4 +367,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(collect_worker() if sys.argv[1:] == ['--collect-worker'] else main())

@@ -6,7 +6,9 @@ macOS、Windows 和 Linux 使用同一个 `brand-protection-{{tag}}.zip`。辅�
 
 本版原生 CI 包含 macOS 15（Apple Silicon 和 Intel）、Windows Server 2025 x64、Ubuntu 22.04 / 24.04 x86_64。其他系统版本及宿主应用不等于已实机验收，具体结果以同提交的 GitHub Actions 为准。包内 `references/platform-support.md` 列出范围和限制。
 
-从本版 GitHub Release 下载五个附件，保存在同一下载目录：ZIP、`INSTALL.md`、`PACKAGE-MANIFEST.json`、`VALIDATION.json` 和 `SHA256SUMS.txt`。不要将开发分支当作正式发布。校验值用于核对下载完整性，不代替可信来源核验。
+从本版 GitHub Release 下载六个附件，保存在同一下载目录：ZIP、`INSTALL.md`、`PACKAGE-MANIFEST.json`、`VALIDATION.json`、`RELEASE-NOTES.md` 和 `SHA256SUMS.txt`。不要将开发分支当作正式发布。校验值用于核对下载完整性，不代替可信来源核验。
+
+版本配置、安装说明、发布说明、白名单和全部通用模板均绑定同一源码提交。构建拒绝未提交的修改。`PACKAGE-MANIFEST.json` 与 `VALIDATION.json` 中的 `source_inputs` 记录这些来源文件的 SHA-256；`SHA256SUMS.txt` 覆盖 ZIP 和四份说明、清单与验证附件。
 
 ## macOS 和 Linux
 
@@ -28,7 +30,7 @@ Linux 使用：
 sha256sum -c SHA256SUMS.txt
 ```
 
-四项校验均为 `OK` 后才解压。以下命令拒绝覆盖已有安装；升级时先按“升级与回滚”备份旧目录。
+五项校验均为 `OK` 后才解压。以下命令拒绝覆盖已有安装；升级时先按“升级与回滚”备份旧目录。
 
 ```bash
 (
@@ -58,7 +60,7 @@ py -3.13 --version
 
 没有 `py` 启动器时，先用 `python --version` 确认解释器，再将以下命令的 `py -3.13` 替换为 `python`。不要在 PowerShell 中照抄 Bash 的多行反斜杠。
 
-检查四个下载文件：
+检查五个下载文件：
 
 ```powershell
 $ErrorActionPreference = 'Stop'
@@ -94,6 +96,8 @@ if ($LASTEXITCODE -ne 0) { throw '队列检查失败，请检查 JSON 中的 err
 安装后的结构应为 `.agents/skills/brand-protection/SKILL.md`，不要多嵌套一层同名目录。项目级安装可改放当前项目的 `.agents/skills/`。同一宿主扫描范围内只保留一份该 Skill。
 
 刷新或重启支持 Agent Skills 的宿主，按其规则调用 `$brand-protection`。安装目录及发现方式参考 [OpenAI 官方说明](https://developers.openai.com/codex/skills)；其他宿主按各自文档配置。脚本测试通过不代表每个宿主的发现和沙箱许可都已验收。
+
+发布构建在隔离的 `.agents/skills/brand-protection` 下实际解压和安装。macOS / Linux 执行 `cp -R`；Windows 对可用的 PowerShell 分别执行 `Expand-Archive` 和 `Copy-Item -Recurse`。随后逐文件核对字节，解析 `SKILL.md` 与 `agents/openai.yaml`，检查相对链接，运行各 CLI 的 `--help` 和空白案件队列。任何一步失败都会使构建失败。`VALIDATION.json` 的 `native_installation` 保存结果，`host_runtime_loaded: false` 明确表示尚未证明真实宿主已经发现和加载。
 
 真实品牌资料、证书、案件、审批、证据和报告放在安装目录、源码仓库及宿主扫描目录之外。私有根目录须事先存在。macOS / Linux 可在个人目录中创建受限目录；Windows 使用普通本地目录，并核对 NTFS ACL 和子目录继承。`0600` 在 Windows 上不代表已经限制其他账户访问，详见 [Python 说明](https://docs.python.org/3.13/library/os.html#os.chmod)。
 

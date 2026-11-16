@@ -1,5 +1,6 @@
 """Build an allowlisted Skill archive and test the actual extracted scripts."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -13,6 +14,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / 'skills/brand-protection'
+sys.path.insert(0, str(ROOT/'tools'))
+from native_install_smoke import smoke_install
 
 
 def test_summary(output):
@@ -58,19 +61,75 @@ def write_utf8(path, content):
     Path(path).write_bytes(content.encode('utf-8'))
 
 
+def clean_source(expected=None):
+    """The tests and build tools must run from the same clean fixed commit."""
+    source = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], cwd=ROOT, encoding='ascii').strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', source):
+        raise ValueError('invalid source commit')
+    if expected is not None and source != expected:
+        raise ValueError('source commit changed during release validation')
+    status = subprocess.check_output(['git', 'status', '--porcelain=v1', '--untracked-files=all'], cwd=ROOT)
+    if status:
+        raise ValueError('dirty release source; commit and review all inputs before building')
+    return source
+
+
+def committed_input(source, name):
+    return subprocess.check_output(['git', 'show', source+':'+name], cwd=ROOT)
+
+
+def release_inputs(source):
+    inputs = {name:committed_input(source, name) for name in (
+        'release/version.json', 'release/skill-files.json', 'release/template-sha256.json',
+        'docs/installation.md', 'LICENSE')}
+    version = json.loads(inputs['release/version.json'])
+    tag = version['tag']
+    if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
+        raise ValueError('invalid release tag')
+    notes = 'docs/releases/'+tag+'.md'
+    inputs[notes] = committed_input(source, notes)
+    return version, inputs
+
+
+def blank_templates(files, reviewed):
+    """Every asset must match its reviewed generic, unfilled template bytes."""
+    assets = {name.removeprefix('brand-protection/'):data for name, data in files.items()
+              if name.startswith('brand-protection/assets/')}
+    if not isinstance(reviewed, dict) or set(reviewed) != set(assets):
+        raise ValueError('template inventory differs from reviewed blank-template baseline')
+    for name, data in assets.items():
+        if not re.fullmatch(r'[0-9a-f]{64}', reviewed[name] if isinstance(reviewed[name], str) else ''):
+            raise ValueError('invalid blank-template digest')
+        if sha256(data) != reviewed[name]:
+            raise ValueError('template differs from reviewed blank-template baseline: '+name)
+    template = json.loads(assets['assets/case-record.json'])
+    # Guidance is generic prose; every other branch must be an empty record or a safe default.
+    def empty(value):
+        if isinstance(value, dict):
+            return all(empty(child) for child in value.values())
+        if isinstance(value, list):
+            return value == []
+        return value is None or value is False or value == 0 or value in ('unknown', 'not_configured', 'none')
+    if any(not empty(value) for key, value in template.items() if key not in ('schema_version', 'field_guidance')):
+        raise ValueError('case template contains records or enabled permissions')
+    for name in ('assets/submission-approval.json', 'assets/consumer-approval.json'):
+        approval = json.loads(assets[name])
+        if any(not empty(value) for key, value in approval.items() if key != 'version'):
+            raise ValueError('approval template contains records or approval')
+    return len(assets)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--live', action='store_true', help='Allow required public integration probes')
     args = parser.parse_args()
-    version = json.loads((ROOT / 'release/version.json').read_text(encoding='utf-8'))
+    source = clean_source()
+    version, inputs = release_inputs(source)
     tag = version['tag']
-    if not re.fullmatch(r'v\d+\.\d+\.\d+', tag):
-        raise ValueError('invalid release tag')
-    source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, encoding='ascii').strip()
-    listed = json.loads((ROOT / 'release/skill-files.json').read_text(encoding='utf-8'))
+    listed = json.loads(inputs['release/skill-files.json'])
     if len(listed) != len(set(listed)):
         raise ValueError('duplicate allowlist path')
-    tracked = subprocess.check_output(['git', 'ls-tree', '-rz', 'HEAD', '--', 'skills/brand-protection'], cwd=ROOT)
+    tracked = subprocess.check_output(['git', 'ls-tree', '-rz', source, '--', 'skills/brand-protection'], cwd=ROOT)
     expected = {}
     for entry in tracked.split(b'\0'):
         if not entry:
@@ -91,7 +150,9 @@ def main():
         source_path = SKILL / path
         if source_path.is_symlink():
             raise ValueError('symbolic links may not ship')
-        data = source_path.read_bytes()
+        data = committed_input(source, 'skills/brand-protection/'+name)
+        if source_path.read_bytes() != data:
+            raise ValueError('worktree content differs from committed source')
         blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
         if blob != expected[name]:
             raise ValueError('worktree content differs from committed source')
@@ -99,16 +160,8 @@ def main():
         if re.search(r'gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----', decoded):
             raise ValueError('credential-shaped text detected')
         files['brand-protection/' + name] = data
-    template = json.loads(files['brand-protection/assets/case-record.json'])
-    for field in ('brand', 'brand_id', 'case_id', 'created_at', 'updated_at'):
-        if template.get(field) is not None:
-            raise ValueError('filled case template')
-    for field in ('targets','evidence','rights','actions','deadlines','runs','outbound_attempts','materials','parties'):
-        if template.get(field) != []:
-            raise ValueError('case template contains records')
-    if template['follow_up']['requested'] is not False or template['follow_up']['enabled'] is not False:
-        raise ValueError('template enables monitoring')
-    if files['brand-protection/LICENSE'] != (ROOT/'LICENSE').read_bytes():
+    templates_checked = blank_templates(files, json.loads(inputs['release/template-sha256.json']))
+    if files['brand-protection/LICENSE'] != inputs['LICENSE']:
         raise ValueError('standalone license differs')
     links = 0
     for name, data in files.items():
@@ -129,6 +182,7 @@ def main():
     if version.get('required_live_checks') and not args.live:
         raise ValueError('This release requires --live public integration validation')
     source_result = run_tests()
+    clean_source(source)
     out = ROOT / 'dist'
     out.mkdir(exist_ok=True)
     package = out / ('brand-protection-' + tag + '.zip')
@@ -142,6 +196,12 @@ def main():
                 info.compress_type = zipfile.ZIP_DEFLATED
                 handle.writestr(info, data)
     archive(package)
+    source_inputs = {name:sha256(data) for name, data in sorted(inputs.items())}
+    manifest = {'tag': tag, 'source_commit': source, 'source_inputs':source_inputs,
+                'files': [{'path': name, 'sha256': sha256(data)} for name, data in sorted(files.items())]}
+    native_result = smoke_install(package, manifest)
+    if native_result.get('passed') is not True or native_result.get('host_runtime_loaded') is not False:
+        raise ValueError('invalid native installation verification report')
     live_report = {'checks': []}
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory)
@@ -175,9 +235,9 @@ def main():
                 raise ValueError('Invalid live verification report')
             if {c.get('name') for c in live_report.get('checks', [])} != set(version['required_live_checks']):
                 raise ValueError('Missing required live check')
-    manifest = {'tag': tag, 'source_commit': source,
-                'files': [{'path': name, 'sha256': sha256(data)} for name, data in sorted(files.items())]}
-    validation = {'tag': tag, 'source_commit': source,
+    clean_source(source)
+    validation = {'tag': tag, 'source_commit': source, 'checked_at':datetime.now(timezone.utc).isoformat(),
+                  'source_inputs':source_inputs, 'native_installation':native_result,
                   'source_tests': source_result['discovered'], 'installed_tests': installed_result['discovered'],
                   'source_result': source_result, 'installed_result': installed_result,
                   'environment': {'system': platform.system(), 'release': platform.release(),
@@ -185,22 +245,25 @@ def main():
                   'ci_run_id': os.environ.get('GITHUB_RUN_ID'), 'archive_files': len(files),
                   'relative_file_links_checked': links, 'original_mutations_per_suite': 1120,
                   'package_sha256': sha256(package.read_bytes()),
-                  'blank_template': True, 'monitoring_disabled': True, 'live_checks': live_report['checks'],
+                  'blank_template': True, 'blank_templates_checked':templates_checked,
+                  'monitoring_disabled': True, 'live_checks': live_report['checks'],
                   'scope': 'Synthetic contracts and listed public probes only; no live sending, legal decision or scheduler assurance.'}
     for name, value in [('PACKAGE-MANIFEST.json', manifest), ('VALIDATION.json', validation)]:
         write_utf8(out/name, json.dumps(value, ensure_ascii=False, indent=2)+'\n')
-    install_text = (ROOT/'docs/installation.md').read_text(encoding='utf-8').replace('{{tag}}', tag)
+    install_text = inputs['docs/installation.md'].decode('utf-8').replace('{{tag}}', tag)
     write_utf8(out/'INSTALL.md', install_text)
-    notes = (ROOT/('docs/releases/'+tag+'.md')).read_text(encoding='utf-8')
+    notes = inputs['docs/releases/'+tag+'.md'].decode('utf-8')
     notes += '\n## 发布构建验证\n\n'
     notes += f'源码提交：`{source}`。本构建在 {platform.system()} / {platform.machine()} / Python {platform.python_version()} 执行。\n\n'
     notes += (f'源码与解压包各发现 {source_result["discovered"]} 项测试，'
               f'各通过 {source_result["passed"]} 项，跳过 {source_result["skipped"]} 项平台专属测试。'
               '其他原生系统的执行结果见同提交的 GitHub Actions 任务，不能把跳过项计作通过。\n\n')
     notes += f'安装包包含 {len(files)} 个文件。案件模板为空，持续跟进默认关闭。逐文件哈希见 `PACKAGE-MANIFEST.json`。\n\n'
+    notes += (f'本构建核对 {templates_checked} 份通用 assets 文件，并实际执行原生解压和复制安装。'
+              '已逐文件核对安装字节、解析入口并运行 Python；宿主应用中的发现和加载仍未验收。\n\n')
     notes += '回归测试使用合成数据。已执行的公开接口检查见 `VALIDATION.json`。实际反馈读取、外发和定时运行需要在部署环境验收。\n'
     write_utf8(out/'RELEASE-NOTES.md', notes)
-    shipped = [package.name, 'INSTALL.md', 'PACKAGE-MANIFEST.json', 'VALIDATION.json']
+    shipped = [package.name, 'INSTALL.md', 'PACKAGE-MANIFEST.json', 'VALIDATION.json', 'RELEASE-NOTES.md']
     write_utf8(out/'SHA256SUMS.txt', ''.join(sha256((out/name).read_bytes())+'  '+name+'\n' for name in shipped))
     print(json.dumps(validation))
 

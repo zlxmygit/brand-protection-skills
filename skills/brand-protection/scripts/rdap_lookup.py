@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Single-domain readonly Verisign RDAP lookup. No redirects or case writes."""
+"""Single-domain Verisign RDAP lookup with optional private response archive."""
 import argparse
 from datetime import datetime, timedelta, timezone
 import hashlib
 import http.client
 import json
 import math
+import shutil
 import ssl
 import sys
+import tempfile
 from pathlib import Path
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from investigation import domain_ascii, text, reject_duplicate_pairs, reject_constant, finite_float
+from capture_web import private_root, write_private
+from evidence_export import read_evidence
 
 HOST = 'rdap.verisign.com'
 LIMIT = 1024 * 1024
@@ -89,7 +93,23 @@ def interpret(domain, status, media_type, body):
     return 'registered'
 
 
-def lookup(domain, target_id, *, allow_network=False, timeout=10, fresh_hours=1, transport=fetch, now=None):
+def archive_response(root, body):
+    """Create a private original without overwriting, then verify downstream reads."""
+    root = private_root(root)
+    destination = Path(tempfile.mkdtemp(prefix='rdap-', dir=root))
+    try:
+        saved = destination / 'response.bin'
+        write_private(saved, body)
+        if read_evidence(root, str(saved), hashlib.sha256(body).hexdigest()) != body:
+            raise ValueError('Archived RDAP bytes do not match the original response')
+        return str(saved)
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
+
+
+def lookup(domain, target_id, *, allow_network=False, timeout=10, fresh_hours=1,
+           transport=fetch, now=None, archive_root=None):
     url = endpoint(domain)
     text(target_id, 'target_id', 200)
     for label, value, maximum in [('timeout', timeout, 30), ('fresh_hours', fresh_hours, 24)]:
@@ -101,6 +121,7 @@ def lookup(domain, target_id, *, allow_network=False, timeout=10, fresh_hours=1,
     if not isinstance(checked, datetime) or checked.tzinfo is None or checked.utcoffset() is None:
         raise ValueError('now requires timezone')
     checked = checked.astimezone(timezone.utc)
+    root = private_root(archive_root) if archive_root is not None else None
     identifier = 'rdap-' + uuid.uuid4().hex
     result = {'id': identifier, 'target_id': target_id, 'domain_ascii': domain,
               'queried_at': checked.isoformat(), 'expires_at': (checked + timedelta(hours=fresh_hours)).isoformat(),
@@ -108,24 +129,37 @@ def lookup(domain, target_id, *, allow_network=False, timeout=10, fresh_hours=1,
               'source': {'name': 'Verisign RDAP', 'reference': url, 'coverage': 'partial', 'cache': 'unknown',
                          'limitations': ['registry lookup only; not ownership, safety or infringement proof',
                                          'freshness window is an operational review interval']}}
-    report = {'read_only': True, 'writes_case': False, 'authorizes_submission': False,
+    report = {'read_only': root is None, 'writes_case': False, 'writes_archive': False,
+              'authorizes_submission': False,
               'result': result, 'evidence': [], 'errors': []}
+    phase = 'lookup'
     try:
         status, content_type, body = transport(domain, timeout)
         registration = interpret(domain, status, content_type, body)
+        original_path = None
+        limitations = ['original response bytes not archived; preserve separately when needed']
+        if root is not None:
+            phase = 'archive'
+            original_path = archive_response(root, body)
+            limitations = ['registry response only; ownership, safety and infringement require separate evidence']
         result['registration'] = registration
         evidence_id = identifier + '-response'
         result['evidence_ids'] = [evidence_id]
         report['evidence'] = [{'id': evidence_id, 'source_url_or_document': url,
                               'acquired_at': checked.isoformat(), 'method': 'registry_rdap_lookup',
-                              'sha256': hashlib.sha256(body).hexdigest(), 'original_path': None,
+                              'sha256': hashlib.sha256(body).hexdigest(), 'original_path': original_path,
                               'supports': {'domain_ascii': domain, 'registration': registration, 'http_status': status},
-                              'limitations': ['original response bytes not archived; preserve separately when needed'],
+                              'limitations': limitations,
                               'disclosure_class': 'restricted'}]
+        report['writes_archive'] = original_path is not None
     except (OSError, ValueError, TypeError, OverflowError, RecursionError, http.client.HTTPException):
         result['source']['coverage'] = 'failed'
-        result['source']['limitations'].append('request unavailable, rejected or response invalid; no inference made')
-        report['errors'].append({'code': 'lookup_unavailable', 'retry': 'manual review; do not loop or bypass limits'})
+        if phase == 'archive':
+            result['source']['limitations'].append('response archive failed or could not be verified; no assertion retained')
+            report['errors'].append({'code': 'archive_unavailable', 'retry': 'repair the private archive and review; no automatic retry'})
+        else:
+            result['source']['limitations'].append('request unavailable, rejected or response invalid; no inference made')
+            report['errors'].append({'code': 'lookup_unavailable', 'retry': 'manual review; do not loop or bypass limits'})
     return report
 
 
@@ -136,12 +170,17 @@ def main():
     parser.add_argument('--allow-network', action='store_true')
     parser.add_argument('--timeout', type=float, default=10)
     parser.add_argument('--fresh-hours', type=float, default=1)
+    parser.add_argument('--archive-root', type=Path,
+                        help='Existing private directory outside the Skill/repository; archive original response bytes')
     args = parser.parse_args()
     try:
         result = lookup(args.domain, args.target_id, allow_network=args.allow_network,
-                        timeout=args.timeout, fresh_hours=args.fresh_hours)
+                        timeout=args.timeout, fresh_hours=args.fresh_hours, archive_root=args.archive_root)
     except ValueError as exc:
         print(json.dumps({'errors': [str(exc)], 'authorizes_submission': False}, ensure_ascii=True))
+        return 2
+    except OSError:
+        print(json.dumps({'errors': ['private_archive_directory_unavailable'], 'authorizes_submission': False}))
         return 2
     print(json.dumps(result, ensure_ascii=True, allow_nan=False, indent=2))
     return 1 if result['errors'] else 0

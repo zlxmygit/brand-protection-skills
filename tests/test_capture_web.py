@@ -159,7 +159,9 @@ class CaptureContracts(unittest.TestCase):
         raw = Mock()
         with patch.object(m.socket, 'create_connection', return_value=raw) as create:
             connection.connect()
-        self.assertEqual(create.call_args.args, ((PUBLIC, 443), 10))
+        self.assertEqual(create.call_args.args[0], (PUBLIC, 443))
+        self.assertGreater(create.call_args.args[1], 0)
+        self.assertLessEqual(create.call_args.args[1], 10)
         connection.tls.wrap_socket.assert_called_once_with(raw, server_hostname='example.com')
 
 
