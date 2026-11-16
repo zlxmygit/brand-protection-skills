@@ -10,12 +10,13 @@ from pathlib import Path
 import re
 import sys
 
-from record_integrity import check_identity, evidence_closure
+from record_integrity import check_identity, evidence_closure, validate_case_budget
 
 REGISTRATION = {'registered', 'not_found', 'unknown'}
 RELATIONSHIP = {'owned', 'authorized', 'third_party', 'unknown'}
 SIGNALS = {'brand_use', 'copied_content', 'impersonation', 'transaction',
            'suspected_counterfeit', 'credential_collection'}
+EVIDENCE_REVIEW_SIGNALS = {'copied_content', 'impersonation', 'credential_collection'}
 COVERAGE = {'complete', 'partial', 'failed'}
 CACHE = {'live', 'cached', 'unknown'}
 MAX_FILE_BYTES = 8 * 1024 * 1024
@@ -120,7 +121,8 @@ def reject_constant(_):
     raise ValueError('non-standard JSON number')
 
 
-def read_json(path):
+def load_json(path):
+    """Strict bounded parsing, without case-budget or schema decisions."""
     # Bounded binary read avoids loading an arbitrarily large file into memory.
     with Path(path).open('rb') as handle:
         data = handle.read(MAX_FILE_BYTES + 1)
@@ -130,9 +132,17 @@ def read_json(path):
                       parse_constant=reject_constant, parse_float=finite_float)
 
 
+def read_json(path):
+    """Read a bounded JSON input and reject excessive case/structure budgets."""
+    value = load_json(path)
+    validate_case_budget(value)
+    return value
+
+
 def assess(case, now):
     if not isinstance(case, dict):
         raise ValueError('case must be an object')
+    validate_case_budget(case)
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError('now requires timezone')
     now = now.astimezone(timezone.utc)
@@ -199,6 +209,8 @@ def assess(case, now):
                 next_step = 'refresh_source'
             elif relationship in {'owned', 'authorized'}:
                 next_step = 'review_known_asset' if signals else 'exclude_known_asset'
+            elif EVIDENCE_REVIEW_SIGNALS.intersection(signals):
+                next_step = 'review_evidence'
             elif registration != 'registered':
                 next_step = 'verify_registration'
             elif signals:
@@ -212,6 +224,7 @@ def assess(case, now):
                 'source': {'name': source_name, 'reference': reference, 'coverage': coverage,
                            'cache': cache, 'limitations': list(limits)},
                 'queried_at': queried.isoformat(), 'freshness': freshness, 'next_step': next_step,
+                'registration_review_required': registration != 'registered',
                 'authorizes_submission': False,
             })
         except (ValueError, TypeError, OverflowError) as exc:

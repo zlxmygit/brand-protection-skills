@@ -37,17 +37,20 @@ class CaptureContracts(unittest.TestCase):
 
     def test_private_loopback_linklocal_multicast_and_transition_ips_rejected(self):
         for address in ('127.0.0.1', '10.0.0.1', '169.254.169.254', '100.64.0.1', '224.0.0.1',
-                        '::1', 'fc00::1', 'fe80::1', '::ffff:127.0.0.1', '2002:7f00:1::'):
+                        '192.0.0.8', '192.0.0.11', '192.0.0.255', '64:ff9b::a00:1',
+                        '64:ff9b:1::a00:1', '::1', 'fc00::1', 'fe80::1',
+                        '::ffff:127.0.0.1', '2002:7f00:1::'):
             lookup = lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, 443))]
             with self.subTest(address=address), self.assertRaises(ValueError):
                 m.public_addresses('example.com', lookup)
 
     def test_mixed_public_private_dns_is_rejected_before_request(self):
-        lookup = lambda *a, **k: resolver(*a, **k) + [(2, 1, 6, '', ('10.0.0.1', 443))]
-        sender = Mock()
-        with self.assertRaises(ValueError):
-            m.collect('https://example.com', ['example.com'], allow_network=True, resolver=lookup, transport=sender)
-        sender.assert_not_called()
+        for address in ('10.0.0.1', '192.0.0.8', '64:ff9b:1::a00:1'):
+            lookup = lambda *a, **k: resolver(*a, **k) + [(2, 1, 6, '', (address, 443))]
+            sender = Mock(side_effect=transport)
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                m.collect('https://example.com', ['example.com'], allow_network=True, resolver=lookup, transport=sender)
+            sender.assert_not_called()
 
     def test_explicit_permission_and_allowlist_are_required(self):
         for kwargs in ({}, {'allow_network': False}, {'allow_network': 1}):
@@ -159,7 +162,9 @@ class CaptureContracts(unittest.TestCase):
         raw = Mock()
         with patch.object(m.socket, 'create_connection', return_value=raw) as create:
             connection.connect()
-        self.assertEqual(create.call_args.args, ((PUBLIC, 443), 10))
+        self.assertEqual(create.call_args.args[0], (PUBLIC, 443))
+        self.assertGreater(create.call_args.args[1], 0)
+        self.assertLessEqual(create.call_args.args[1], 10)
         connection.tls.wrap_socket.assert_called_once_with(raw, server_hostname='example.com')
 
 

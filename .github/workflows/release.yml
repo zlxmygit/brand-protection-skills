@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths: ['release/version.json']
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     paths: ['release/version.json', 'tools/**', '.github/workflows/release.yml']
 permissions:
   contents: read
@@ -36,9 +37,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -B -m unittest discover -s tests -v
+      - name: Verify macOS system aliases with an alternate TMPDIR
+        if: runner.os == 'macOS'
+        env:
+          TMPDIR: /tmp
+        run: python -B -m unittest discover -s tests -p test_cross_platform.py -v
       - name: Run bounded cross-module mutations and graph checks
         run: python -B tests/extended_v18_probes.py
-      - name: Verify extracted package and public probes on the native OS
+      - name: Verify native copy installation and public probes
         if: matrix.python == '3.13'
         run: python -B tools/build_release.py --live
   publish:
@@ -65,16 +71,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -B tools/release_preflight.py > preflight.json
-          TAG=$(python -c 'import json; print(json.load(open("preflight.json"))["tag"])')
-          EXISTS=$(python -c 'import json; print(str(json.load(open("preflight.json"))["tag_exists"]).lower())')
+          python -B tools/release_preflight.py > dist/PREFLIGHT.json
+          TAG=$(python -c 'import json; print(json.load(open("dist/PREFLIGHT.json"))["tag"])')
+          EXISTS=$(python -c 'import json; print(str(json.load(open("dist/PREFLIGHT.json"))["tag_exists"]).lower())')
           if [[ "$EXISTS" == 'false' ]]; then
             gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE"
           fi
           gh release create "$TAG" --repo "$GH_REPO" --verify-tag --draft \
             --title "Brand Protection Skill $TAG" --notes-file "dist/RELEASE-NOTES.md" \
             "dist/brand-protection-$TAG.zip" dist/INSTALL.md dist/PACKAGE-MANIFEST.json \
-            dist/VALIDATION.json dist/SHA256SUMS.txt
+            dist/VALIDATION.json dist/RELEASE-NOTES.md dist/SHA256SUMS.txt
           gh release download "$TAG" --repo "$GH_REPO" --dir downloaded --pattern '*'
           cmp dist/SHA256SUMS.txt downloaded/SHA256SUMS.txt
           (cd downloaded && sha256sum -c SHA256SUMS.txt)
@@ -85,7 +91,10 @@ jobs:
           import json
           data = json.load(open('published.json'))
           assert not data['draft'] and not data['prerelease'] and data['published_at']
-          assert len(data['assets']) == 5
+          expected = {'brand-protection-' + json.load(open('dist/PREFLIGHT.json'))['tag'] + '.zip',
+                      'INSTALL.md', 'PACKAGE-MANIFEST.json', 'VALIDATION.json', 'RELEASE-NOTES.md', 'SHA256SUMS.txt'}
+          assert {a['name'] for a in data['assets']} == expected
+          assert len(data['assets']) == 6
           assert all(a['state'] == 'uploaded' for a in data['assets'])
           print(data['html_url'])
           PY

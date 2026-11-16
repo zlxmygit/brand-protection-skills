@@ -1,0 +1,12 @@
+{
+  "assets/case-record.json": "a8b9c93f9f4eac9340dcbbcf6eeb2c0c67b278d017ba4bd32325921397b90d69",
+  "assets/channels/cloudflare-copyright.json": "b67038f0a76592e6c29c7e35780f22eb83e2df5b603566cb7dd65d3d35191a00",
+  "assets/complaint-templates.md": "700d2632a9ac001aff87ab1098d129858938242e0fe45f94bac95b6720905d00",
+  "assets/consumer-approval.json": "9cf1be76bd534f78420cacd1cf7992f5279e4a61dcea3d794c59faff89238a66",
+  "assets/consumer-templates.json": "ae0d1f5085639c13de4cee077146a4e524b8edea8ba004e9e73e8a71329b7f9f",
+  "assets/follow-up-policy.json": "2a785fda503f2c8c39be041319219505763bded3ee9a13cf246487020839fe73",
+  "assets/host-adapter-contract.json": "e5f97e2d5cadfc9f09139707f7fba2dfb0db9311599f94aa02f3f00f92d22ce2",
+  "assets/intake-form.md": "77c73658fad14fbce694ecb29411560b30361355a30352dfea1f07a2c0027090",
+  "assets/monitoring-prompt.md": "c378c14787d6173f82d8b9d31285ad955796267f7f4c2f48d199697cc3771f0d",
+  "assets/submission-approval.json": "f5fe67f680bd8f118658ae8be06df264c36bf3a999685c58ce9db70189a4bf28"
+}

@@ -3,6 +3,51 @@ from collections import deque
 
 MAX_RECORDS = 10000
 MAX_DEPENDENCIES = 1000
+MAX_REFERENCE_EDGES = 50000
+MAX_DEPTH = 64
+MAX_NODES = 100000
+
+
+def validate_case_budget(value):
+    """Bound JSON traversal before graph work; never silently truncate records.
+
+    Applies to case records and ordinary tool profiles without requiring a
+    particular schema. Callers that retain independent deadlines on failure
+    must do so separately and must not treat partial validation as permission.
+    """
+    pending = [(value, 0, False)]
+    active = set()
+    nodes = records = edges = 0
+    while pending:
+        item, depth, leaving = pending.pop()
+        if leaving:
+            active.remove(id(item))
+            continue
+        nodes += 1
+        if nodes > MAX_NODES or depth > MAX_DEPTH:
+            raise ValueError('JSON structure budget exceeded')
+        if not isinstance(item, (dict, list)):
+            continue
+        if id(item) in active:
+            raise ValueError('Cyclic JSON container')
+        active.add(id(item))
+        pending.append((item, depth, True))
+        if isinstance(item, list):
+            records += sum(isinstance(row, dict) for row in item)
+            if records > MAX_RECORDS:
+                raise ValueError('Case record budget exceeded')
+            if len(item) > MAX_NODES:
+                raise ValueError('JSON array budget exceeded')
+            pending.extend((row, depth + 1, False) for row in reversed(item))
+        else:
+            if len(item) > MAX_NODES:
+                raise ValueError('JSON object budget exceeded')
+            for key, child in item.items():
+                if isinstance(key, str) and key.endswith('_ids') and isinstance(child, list):
+                    edges += len(child)
+                    if edges > MAX_REFERENCE_EDGES:
+                        raise ValueError('Case reference budget exceeded')
+                pending.append((child, depth + 1, False))
 
 
 def identifier(value, label):

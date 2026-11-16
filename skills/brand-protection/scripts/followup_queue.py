@@ -9,6 +9,10 @@ import math
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from investigation import load_json
+from record_integrity import MAX_RECORDS, validate_case_budget
+
 
 KINDS = {
     'initial_notice', 'check_feedback', 'check_target', 'verify_receipt', 'remind', 'resubmit',
@@ -28,6 +32,13 @@ PENDING_SEND = {'prepared', 'in_flight', 'outcome_unknown'}
 ATTEMPT_STATES = PENDING_SEND | {'sent', 'confirmed_not_sent'}
 CLOSED_TASKS = {'completed', 'cancelled'}
 CLOSED_DEADLINES = {'completed', 'resolved', 'cancelled', 'superseded'}
+OBSERVATION_STATES = {'enabled', 'not_authorized', 'paused', 'ended'}
+INVESTIGATION_ACTIONS = {'researching', 'draft', 'awaiting_evidence'}
+RECURRENCE_PLAN_WARNING = (
+    'recurrence_authorization_requires_plan_review: recorded legacy recurrence_watch authority lacks a valid '
+    'explicit observation plan; review current scope, status and schedule. Authority alone does not enable '
+    'observation, create tasks or block otherwise valid work.'
+)
 
 
 def identifier(value):
@@ -170,32 +181,97 @@ def linked_deadline(task, deadline):
             and deadline.get('action_id') == task['action_id'])
 
 
-def unique_object(pairs):
-    """Reject ambiguous JSON before overwritten deadlines/permissions disappear."""
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f'duplicate JSON member: {key}')
-        result[key] = value
-    return result
+def recurrence_observations(rows, targets, result):
+    """An explicit local registration never enables itself or grants authority."""
+    valid = {}
+    for key, row in rows.items():
+        try:
+            if not member(row.get('status'), OBSERVATION_STATES):
+                raise ValueError('unknown observation status')
+            scope = id_list(row.get('target_ids'), 'target_ids')
+            if any(target_id not in targets for target_id in scope):
+                raise ValueError('target_ids contains an unknown or quarantined target')
+            enabled = row['status'] == 'enabled'
+            authority = row.get('authorization_source')
+            if (authority is not None and not identifier(authority)) or (enabled and not identifier(authority)):
+                raise ValueError('enabled observation requires its own authorization_source')
+            interval = row.get('interval_hours')
+            if interval is not None or enabled:
+                if (type(interval) not in (int, float) or not math.isfinite(interval)
+                        or interval <= 0):
+                    raise ValueError('interval_hours must be a finite positive number')
+            review = row.get('next_review_at')
+            if review is not None or enabled:
+                timestamp(review, f'{key}.next_review_at')
+            valid[key] = row
+        except (ValueError, TypeError, OverflowError) as exc:
+            error(result, 'recurrence_observations', str(exc), key)
+    return valid
 
 
-def finite_number(value):
-    parsed = float(value)
-    if not math.isfinite(parsed):
-        raise ValueError('non-finite JSON number')
-    return parsed
+def task_scope(task, actions, observations):
+    if 'target_ids' in task:
+        return task['target_ids']
+    action = actions.get(task.get('action_id'), {})
+    if action:
+        return action.get('target_ids', [])
+    observation = observations.get(task.get('recurrence_observation_id'), {})
+    return observation.get('target_ids', [])
 
 
-def reject_constant(value):
-    raise ValueError(f'non-standard JSON constant: {value}')
+def task_links(task, actions, targets, deadlines, observations, runs):
+    """Check closed history too; scheduling fields are checked only for live work."""
+    kind, state = task.get('kind'), task.get('status')
+    if not member(kind, KINDS) or not member(state, TASK_STATES):
+        raise ValueError('unknown kind or status')
+    action_id = task.get('action_id')
+    if action_id is not None and (not identifier(action_id) or action_id not in actions):
+        raise ValueError('unknown action_id')
+    if kind in OUTBOUND and (action_id is None or not identifier(task.get('dedupe_key'))):
+        raise ValueError('outbound task requires action_id and dedupe_key')
+    action = actions.get(action_id, {})
+    if 'target_ids' in task:
+        scope = id_list(task['target_ids'], 'target_ids')
+        if any(target_id not in targets for target_id in scope):
+            raise ValueError('target_ids contains an unknown or quarantined target')
+        parent_scope = action.get('target_ids')
+        if action_id is not None and (not isinstance(parent_scope, list)
+                or any(target_id not in parent_scope for target_id in scope)):
+            raise ValueError('task target_ids must be within its action target_ids')
+    if 'deadline_ids' in task:
+        for deadline_id in id_list(task['deadline_ids'], 'deadline_ids', allow_empty=True):
+            if deadline_id not in deadlines:
+                raise ValueError('unknown or quarantined deadline_id')
+            owner = deadlines[deadline_id].get('action_id')
+            if owner is not None and owner != action_id:
+                raise ValueError('deadline_id belongs to another action')
+    if kind == 'send_correction' and not action.get('corrects_action_id'):
+        raise ValueError('send_correction requires an independent linked correction action')
+    if 'recurrence_observation_id' in task:
+        observation_id = task['recurrence_observation_id']
+        if not identifier(observation_id) or observation_id not in observations:
+            raise ValueError('unknown or quarantined recurrence_observation_id')
+        if kind != 'check_recurrence':
+            raise ValueError('recurrence_observation_id requires a check_recurrence task')
+        if any(target_id not in observations[observation_id]['target_ids']
+               for target_id in task_scope(task, actions, observations)):
+            raise ValueError('task target scope is outside its recurrence observation')
+    if task.get('run_id') is not None and (not identifier(task['run_id']) or task['run_id'] not in runs):
+        raise ValueError('unknown or quarantined run_id')
 
 
-def coverage(targets, actions, tasks, result, now):
+def coverage(targets, actions, tasks, observations, result):
     """Report only recorded scope; never invent channels or declare global coverage."""
     gaps = result['coverage_gaps']
-    available = {t['id'] for t in result['due_tasks'] + result['deferred_tasks']}
+    available = {t['id']: t for t in result['due_tasks'] + result['deferred_tasks']}
     held = {t['id']: t['reason'] for t in result['held_tasks']}
+    usable = {t['id'] for t in tasks if t['id'] in available
+              or (t['status'] == 'blocked' and held.get(t['id']) == 'blocked')
+              or (t['status'] == 'in_progress' and held.get(t['id']) == 'in_progress')}
+    investigation_targets = {target_id for task in tasks
+                             if task['id'] in usable and task['kind'] not in OUTBOUND | {'check_recurrence'}
+                             and task.get('action_id') is None and 'target_ids' in task
+                             for target_id in task['target_ids']}
     for action_id, action in actions.items():
         if member(action.get('status'), TERMINAL_ACTIONS):
             continue
@@ -206,14 +282,11 @@ def coverage(targets, actions, tasks, result, now):
         for target_id in target_ids:
             match = [t for t in tasks if t.get('action_id') == action_id
                      and ('target_ids' not in t or target_id in t['target_ids'])]
-            covered = False
-            for task in match:
-                if task['id'] in available:
-                    covered = True
-                elif task['status'] == 'blocked' and held.get(task['id']) == 'blocked':
-                    covered = True  # reason/review_at were validated before inclusion.
-                elif task['status'] == 'in_progress' and held.get(task['id']) == 'in_progress':
-                    covered = True
+            covered = any(task['id'] in usable for task in match)
+            if (member(action.get('status'), INVESTIGATION_ACTIONS)
+                    and targets.get(target_id, {}).get('phase') == 'investigation'
+                    and target_id in investigation_targets):
+                covered = True
             if not covered:
                 gaps.append({'action_id': action_id, 'target_id': target_id,
                              'provider_id': action.get('provider_id'), 'route': action.get('route'),
@@ -222,6 +295,10 @@ def coverage(targets, actions, tasks, result, now):
                 gaps.append({'action_id': action_id, 'target_id': target_id, 'reason': 'target_reference_unknown'})
     for target_id, target in targets.items():
         if member(target.get('status'), {'closed', 'withdrawn', 'verified_effective', 'closed_no_action'}):
+            continue
+        if target.get('phase') == 'investigation':
+            if target_id not in investigation_targets:
+                gaps.append({'target_id': target_id, 'reason': 'investigation_next_step_or_blocker_review_missing'})
             continue
         linked = [a for a in actions.values() if isinstance(a.get('target_ids'), list) and target_id in a['target_ids']]
         plan = target.get('channel_plan', [])
@@ -243,17 +320,41 @@ def coverage(targets, actions, tasks, result, now):
                              'route': channel['route'], 'reason': 'channel_action_missing'})
         if linked and all(member(a.get('status'), TERMINAL_ACTIONS) for a in linked):
             gaps.append({'target_id': target_id, 'reason': 'target_result_or_next_route_review_required'})
+    # Index observation coverage once; a large registration list must not multiply task scans.
+    observed_targets = {}
+    for task in tasks:
+        observation_id = task.get('recurrence_observation_id')
+        observation = observations.get(observation_id)
+        if task['id'] not in usable or not observation or observation['status'] != 'enabled':
+            continue
+        when = (task['review_at'] if task['status'] == 'blocked'
+                else available.get(task['id'], {}).get('eligible_at', task['due_at']))
+        review = timestamp(observation['next_review_at'], f'{observation_id}.next_review_at')
+        if timestamp(when, 'observation task review') <= review:
+            observed_targets.setdefault(observation_id, set()).update(task_scope(task, actions, observations))
+    # Observation has an independent lifecycle, including after the notice/target closes.
+    for observation_id, observation in observations.items():
+        if observation['status'] != 'enabled':
+            continue
+        for target_id in observation['target_ids']:
+            if target_id not in observed_targets.get(observation_id, set()):
+                gaps.append({'observation_id': observation_id, 'target_id': target_id,
+                             'next_review_at': observation['next_review_at'],
+                             'reason': 'recurrence_next_step_or_blocker_review_missing'})
 
 
-def build_queue(case, now, horizon_hours=48):
+def build_queue(case, now, horizon_hours=48, validate_only=False):
     """Return candidates, per-record errors and recovery gaps without mutating input."""
     if not isinstance(case, dict):
         raise ValueError('case must be an object')
+    if type(validate_only) is not bool:
+        raise ValueError('validate_only must be a boolean')
     result = {
         'case_id': case.get('case_id'), 'queue_only': True, 'requires_live_verification': True,
         'due_tasks': [], 'held_tasks': [], 'deferred_tasks': [], 'deadline_alerts': [],
         'unresolved_deadlines': [], 'deadline_conflicts': [], 'recovery_tasks': [],
         'coverage_gaps': [], 'errors': [], 'warnings': [],
+        'validation_only': validate_only,
     }
     try:
         now, horizon = window(now, horizon_hours)
@@ -268,13 +369,27 @@ def build_queue(case, now, horizon_hours=48):
     for field in ('requested', 'enabled'):
         if field in follow and type(follow[field]) is not bool:
             error(result, 'follow_up', f'{field}: expected a boolean')
-    if follow.get('requested') is not True or follow.get('enabled') is not True:
-        result['state'] = 'not_enabled'
+    authorizations = follow.get('authorizations', {})
+    recorded_recurrence_authority = (isinstance(authorizations, dict)
+                                     and identifier(authorizations.get('recurrence_watch')))
+    if recorded_recurrence_authority and case.get('recurrence_observations', []) == []:
+        result['warnings'].append(RECURRENCE_PLAN_WARNING)
+    follow_state = 'preview' if follow.get('requested') is True and follow.get('enabled') is True else 'not_enabled'
+    for source in ('scheduler', 'host_adapter'):
+        settings = follow.get(source, {})
+        if not isinstance(settings, dict):
+            error(result, 'follow_up', f'{source}: expected an object')
+        elif settings.get('status') == 'paused' and follow_state == 'preview':
+            follow_state = 'paused'
+    result['follow_up_state'] = follow_state
+    if follow_state != 'preview' and not validate_only:
+        result['state'] = follow_state
         return result
-    result['state'] = 'preview'
-    unsafe = not identifier(case.get('case_id'))
-    if unsafe:
-        error(result, 'case_id', 'enabled case requires a non-empty id')
+    result['state'] = 'validation_only' if validate_only else 'preview'
+    unsafe = bool(result['errors'])
+    if not identifier(case.get('case_id')):
+        error(result, 'case_id', 'validated case requires a non-empty id')
+        unsafe = True
     version = case.get('schema_version')
     if version not in (None, '1.1', '1.2', '1.3'):
         error(result, 'schema_version', 'unsupported schema version')
@@ -282,9 +397,20 @@ def build_queue(case, now, horizon_hours=48):
     elif version != '1.3':
         result['warnings'].append('legacy_record: review the documented 1.3 migration; no fields were inferred or written')
 
-    # Legal deadlines survive all independent task/attempt validation errors.
+    # Check budgets before graph/index work, while retaining bounded independent deadlines.
+    budget_error = None
+    try:
+        validate_case_budget(case)
+    except (ValueError, TypeError, OverflowError, RecursionError) as exc:
+        budget_error = str(exc)
+        error(result, 'record_budget', budget_error)
     deadlines = []
-    deadline_map = records(case, 'deadlines', result)
+    rows = case.get('deadlines', [])
+    if budget_error and isinstance(rows, list) and len(rows) > MAX_RECORDS:
+        error(result, 'deadlines', 'deadline collection exceeds independent scan limit')
+        deadline_map = {}
+    else:
+        deadline_map = records(case, 'deadlines', result)
     for key, deadline in deadline_map.items():
         if member(deadline.get('status'), CLOSED_DEADLINES):
             continue
@@ -302,6 +428,11 @@ def build_queue(case, now, horizon_hours=48):
         except ValueError as exc:
             error(result, 'deadlines', str(exc), key)
             result['unresolved_deadlines'].append({'id': key, 'reason': 'invalid_due_at'})
+    if budget_error:
+        result['state'] = 'record_budget_exceeded'
+        result['warnings'].append('coverage_not_checked: record budget exceeded; no task candidates were produced')
+        result['deadline_alerts'].sort(key=lambda d: d['due_at_utc'])
+        return result
 
     before = len(result['errors'])
     actions = records(case, 'actions', result)
@@ -309,6 +440,12 @@ def build_queue(case, now, horizon_hours=48):
     runs = records(case, 'runs', result)
     attempts = records(case, 'outbound_attempts', result)
     targets = records(case, 'targets', result)
+    observation_rows = records(case, 'recurrence_observations', result)
+    requires_observation_link = ('recurrence_observations' in case and case['recurrence_observations'] != [])
+    observations = recurrence_observations(observation_rows, targets, result)
+    if (recorded_recurrence_authority and not observations
+            and RECURRENCE_PLAN_WARNING not in result['warnings']):
+        result['warnings'].append(RECURRENCE_PLAN_WARNING)
     unsafe |= len(result['errors']) > before
     invalid_actions = set()
     for key, action in actions.items():
@@ -334,21 +471,30 @@ def build_queue(case, now, horizon_hours=48):
         except ValueError as exc:
             error(result, 'actions', str(exc), key)
             invalid_actions.add(key)
+    for key, deadline in deadline_map.items():
+        owner = deadline.get('action_id')
+        if owner is not None and (not identifier(owner) or owner not in actions):
+            error(result, 'deadlines', 'unknown or quarantined action_id', key)
+            unsafe = True
     before = len(result['errors'])
     groups = correction_groups(actions, result)
     unsafe |= len(result['errors']) > before
-    # Unclassifiable historical work may have sent. Do not let task order hide it.
-    for key, task in task_map.items():
-        if not member(task.get('kind'), KINDS) or not member(task.get('status'), TASK_STATES):
-            unsafe = True
-        if member(task.get('kind'), OUTBOUND) and not member(task.get('status'), CLOSED_TASKS):
-            if (not identifier(task.get('action_id')) or task['action_id'] not in actions
-                    or not identifier(task.get('dedupe_key'))):
-                unsafe = True
     for key, run in runs.items():
         if not member(run.get('status'), {'running', 'completed', 'interrupted'}):
             error(result, 'runs', 'run status needs verification (running/completed/interrupted)', key)
             unsafe = True
+    # Closed history participates in integrity checks before any candidate is chosen.
+    linked_tasks = {}
+    for key, task in task_map.items():
+        try:
+            task_links(task, actions, targets, deadline_map, observations, runs)
+            linked_tasks[key] = task
+        except (ValueError, TypeError) as exc:
+            error(result, 'followup_tasks', str(exc), key)
+            result['held_tasks'].append({'id': key, 'reason': 'invalid_task'})
+            unsafe = True
+            if task.get('status') == 'in_progress':
+                add_recovery(result, key, 'review_run', 'invalid_claim_or_task_reference', run_id=task.get('run_id'))
     valid_attempts = []
     for key, attempt in attempts.items():
         try:
@@ -364,6 +510,9 @@ def build_queue(case, now, horizon_hours=48):
                 raise ValueError('attempt task/action/dedupe relationship is inconsistent')
             if attempt.get('run_id') is not None and attempt['run_id'] not in runs:
                 raise ValueError('attempt has an unknown run reference')
+            if (attempt.get('run_id') is not None and task.get('run_id') is not None
+                    and attempt['run_id'] != task['run_id']):
+                raise ValueError('attempt run_id differs from its task executor')
             valid_attempts.append(attempt)
             if attempt['status'] in PENDING_SEND:
                 add_recovery(result, attempt['task_id'], 'reconcile_send', 'pending_delivery_record', attempt_id=key)
@@ -374,36 +523,13 @@ def build_queue(case, now, horizon_hours=48):
 
     claimed, pending, used_keys, collisions = delivery_barriers(task_map, valid_attempts, groups)
     valid_tasks = []
-    for key, task in task_map.items():
+    for key, task in linked_tasks.items():
         try:
             kind, state = task.get('kind'), task.get('status')
-            if kind not in KINDS or state not in TASK_STATES:
-                raise ValueError('unknown kind or status')
             if state in CLOSED_TASKS:
                 continue
             action_id = task.get('action_id')
-            if action_id is not None and (not identifier(action_id) or action_id not in actions):
-                raise ValueError('unknown action_id')
-            if kind in OUTBOUND and (action_id is None or not identifier(task.get('dedupe_key'))):
-                raise ValueError('outbound task requires action_id and dedupe_key')
             action = actions.get(action_id, {})
-            if 'target_ids' in task:
-                scope = id_list(task['target_ids'], 'target_ids')
-                if any(target_id not in targets for target_id in scope):
-                    raise ValueError('target_ids contains an unknown or quarantined target')
-                parent_scope = action.get('target_ids')
-                if action_id is not None and (not isinstance(parent_scope, list)
-                        or any(target_id not in parent_scope for target_id in scope)):
-                    raise ValueError('task target_ids must be within its action target_ids')
-            if 'deadline_ids' in task:
-                for deadline_id in id_list(task['deadline_ids'], 'deadline_ids', allow_empty=True):
-                    if deadline_id not in deadline_map:
-                        raise ValueError('unknown or quarantined deadline_id')
-                    owner = deadline_map[deadline_id].get('action_id')
-                    if owner is not None and owner != action_id:
-                        raise ValueError('deadline_id belongs to another action')
-            if kind == 'send_correction' and not action.get('corrects_action_id'):
-                raise ValueError('send_correction requires an independent linked correction action')
             due = timestamp(task.get('due_at'), f'{key}.due_at')
             eligible = due
             constraints = []
@@ -420,6 +546,12 @@ def build_queue(case, now, horizon_hours=48):
                     add_recovery(result, key, 'review_blocker', 'blocker_review_due')
             elif state == 'in_progress':
                 held = recover_claim(task, runs, now, result)
+            observation = observations.get(task.get('recurrence_observation_id'))
+            if observation and observation['status'] != 'enabled':
+                held = 'recurrence_observation_not_enabled'
+            elif (kind == 'check_recurrence' and requires_observation_link
+                    and 'recurrence_observation_id' not in task):
+                held = 'recurrence_observation_link_required'
             if kind in OUTBOUND:
                 af = action.get('followup', {})
                 if not isinstance(af, dict):
@@ -453,6 +585,9 @@ def build_queue(case, now, horizon_hours=48):
                         held = 'matching_sent_or_unresolved_attempt'
             item = {'id': key, 'action_id': action_id, 'kind': kind, 'due_at': task['due_at'],
                     'eligible_at': eligible.isoformat(), 'external_action_candidate': kind in OUTBOUND}
+            if 'recurrence_observation_id' in task:
+                item['recurrence_observation_id'] = task['recurrence_observation_id']
+                item['target_ids'] = task_scope(task, actions, observations)
             if held:
                 result['held_tasks'].append({'id': key, 'reason': held})
             elif eligible > now:
@@ -461,20 +596,31 @@ def build_queue(case, now, horizon_hours=48):
                 result['due_tasks'].append(item)
             for deadline, when in deadlines:
                 if linked_deadline(task, deadline):
-                    if (held and when <= horizon) or eligible >= when:
+                    conflict = None
+                    if held and held != 'in_progress' and when <= horizon:
+                        conflict = held
+                    elif eligible >= when:
+                        conflict = 'eligibility_at_or_after_deadline'
+                    elif held == 'in_progress' and when <= now:
+                        conflict = 'deadline_passed_while_in_progress'
+                    if conflict:
                         result['deadline_conflicts'].append({
                             'task_id': key, 'deadline_id': deadline['id'], 'action_id': action_id,
                             'due_at': deadline['due_at'], 'eligible_at': eligible.isoformat(),
-                            'reason': held or 'eligibility_at_or_after_deadline',
+                            'reason': conflict,
                         })
             valid_tasks.append(task)
         except (ValueError, TypeError) as exc:
             error(result, 'followup_tasks', str(exc), key)
             result['held_tasks'].append({'id': key, 'reason': 'invalid_task'})
-    coverage(targets, actions, valid_tasks, result, now)
+    coverage(targets, actions, valid_tasks, observations, result)
     result['due_tasks'].sort(key=lambda t: (t['eligible_at'], t['id']))
     result['deferred_tasks'].sort(key=lambda t: (t['eligible_at'], t['id']))
     result['deadline_alerts'].sort(key=lambda d: d['due_at_utc'])
+    if validate_only:
+        result['due_tasks'] = []
+        result['deferred_tasks'] = []
+        result['recovery_tasks'] = []
     return result
 
 
@@ -483,6 +629,8 @@ def main():
     parser.add_argument('--case', action='append', required=True, type=Path)
     parser.add_argument('--now', help='ISO-8601 timestamp with timezone; defaults to current UTC')
     parser.add_argument('--horizon-hours', type=float, default=48)
+    parser.add_argument('--validate-only', action='store_true',
+                        help='validate disabled/paused cases too; never return task or recovery candidates')
     args = parser.parse_args()
     try:
         now = timestamp(args.now, 'now') if args.now else datetime.now(timezone.utc)
@@ -494,9 +642,8 @@ def main():
     report = {'checked_at': now.isoformat(), 'queue_only': True, 'cases': [], 'errors': []}
     for path in args.case:
         try:
-            case = json.loads(path.read_text(encoding='utf-8-sig'), object_pairs_hook=unique_object,
-                              parse_constant=reject_constant, parse_float=finite_number)
-            result = build_queue(case, now, args.horizon_hours)
+            case = load_json(path)
+            result = build_queue(case, now, args.horizon_hours, validate_only=args.validate_only)
             result['source_path'] = str(path)
             report['cases'].append(result)
             report['errors'].extend({'source_path': str(path), **e} for e in result['errors'])

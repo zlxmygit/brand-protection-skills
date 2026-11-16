@@ -16,6 +16,10 @@ CI 的原生平台矩阵如下。配置存在不等于测试通过；准确结�
 
 Windows 10/11、其他 Linux 发行版、旧版 macOS、Windows ARM64 和 Linux ARM64 未纳入该矩阵。不能将上述结果宣称为这些系统的实机验收。不同宿主的 Skill 发现、授权和沙箱机制也需要分别确认。
 
+Python 3.13 的各原生平台任务还会运行独立安装检查。macOS / Linux 实际执行 `cp -R`；Windows 对可用的 PowerShell 分别执行 `Expand-Archive` 和 `Copy-Item -Recurse`。安装目标是隔离的 `.agents/skills/brand-protection`，不改写用户现有 Skill。检查逐文件字节、入口和相对链接，再运行各 CLI 的 `--help` 与空白案件队列。构建在任一步失败时停止。
+
+`VALIDATION.json` 记录 `native_installation`，并明确保留 `host_runtime_loaded: false`。这里的入口检查只读取和解析 `SKILL.md`、`agents/openai.yaml`；真实 Codex 或其他宿主的发现、加载和权限仍须在对应宿主中验收。
+
 ## 命令和路径
 
 在 macOS 或 Linux 的终端中，使用 `python3` 显式运行脚本；不依赖可执行位或双击文件。以下命令只读取空白模板，不联网、不写案件。
@@ -41,6 +45,8 @@ if ($LASTEXITCODE -ne 0) { throw '队列检查失败，请检查 JSON 中的 err
 安装目录只放通用文件。真实品牌、证书、案件、证据、审批和运行输出放在仓库及宿主 Skill 扫描目录之外。私有根目录必须事先存在，不能使用 `..` 绕过目录边界。
 
 macOS 的 `/tmp` 和 `/var` 常指向 `/private/tmp` 和 `/private/var`。工具仅接受这两处路径、准确目标且所有者为 root 的系统别名。其余用户符号链接仍会被拒绝。测试临时目录不适合长期存储证据。
+
+macOS 别名测试分别在 `/tmp` 和 `/var/tmp` 创建受限临时子目录。测试不依赖 `TMPDIR` 指向 `/var`，并额外使用 `TMPDIR=/tmp` 复核；系统别名及其目标不会被改写。
 
 Windows 仅支持普通本地磁盘目录。目录联接、其他重解析点、UNC 共享、设备路径、备用数据流、盘符相对路径及保留文件名会被拒绝。云盘占位文件或带目录联接的同步目录可能触发拒绝；应使用已落盘的普通本地私有副本，不关闭路径检查。
 

@@ -20,6 +20,7 @@ PENDING = {'prepared', 'in_flight', 'outcome_unknown'}
 APPROVAL_GATES = {'rights_checked', 'counter_evidence_checked', 'recipient_verified',
                   'disclosure_reviewed', 'signature_authority_checked', 'fees_checked', 'latest_feedback_checked'}
 REVIEWABLE = {'ready_for_review', 'authorized', 'submitted', 'acknowledged', 'needs_information', 'appealed', 'correction_pending'}
+SNAPSHOT_VERSION = '1.2'
 
 
 def indexed(case, section):
@@ -91,9 +92,10 @@ def snapshot(case, action_id, source_root):
     material = {
         'case_id': case_id, 'brand_id': case['brand_id'], 'markets': case.get('markets', []),
         'action_id': action_id, 'target_ids': target_ids, 'targets': [targets[key] for key in sorted(target_ids)],
-        'snapshot_version': '1.1', 'provider': providers[provider_id],
+        'snapshot_version': SNAPSHOT_VERSION, 'provider': providers[provider_id],
         'rights': dependencies['rights'], 'parties': dependencies['parties'],
-        'materials': dependencies['materials'], 'verified_files': dependencies['verified_files'],
+        'materials': dependencies['materials'], 'material_sources': dependencies['material_sources'],
+        'verified_files': dependencies['verified_files'],
         'route': action['route'], 'basis': action['legal_or_policy_basis'], 'remedy': action['requested_remedy'],
         'authority': action['authorization_scope_and_source'], 'signature_authority': action['signature_authority'],
         'corrects_action_id': action.get('corrects_action_id'), 'claim_evidence_ids': claim_ids,
@@ -104,7 +106,7 @@ def snapshot(case, action_id, source_root):
     if 'channel_review' in action:
         material['channel_review'] = action['channel_review']
     encoded = json.dumps(material, ensure_ascii=True, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('ascii')
-    return {'complete': True, 'snapshot_version': '1.1', 'sha256': hashlib.sha256(encoded).hexdigest(), 'body_sha256': hashlib.sha256(body_bytes).hexdigest(),
+    return {'complete': True, 'snapshot_version': SNAPSHOT_VERSION, 'sha256': hashlib.sha256(encoded).hexdigest(), 'body_sha256': hashlib.sha256(body_bytes).hexdigest(),
             'attachment_count': len(attachment_ids), 'operation': operation, 'dedupe_key': payload['dedupe_key']}
 
 

@@ -86,7 +86,7 @@ print('MUTATION_AUDIT_JSON='+json.dumps({'python':sys.version.split()[0], 'resul
       'variants':sum(row['variants'] for row in summaries)}, ensure_ascii=True))
 
 ipresults = []
-for address in ['127.0.0.1', '10.0.0.1', '192.0.0.8', '192.0.0.9', '64:ff9b::a00:1',
+for address in ['127.0.0.1', '10.0.0.1', '192.0.0.8', '192.0.0.9', '192.0.0.10', '64:ff9b::a00:1',
                 '64:ff9b:1::a00:1', '2002:7f00:1::', '2001:db8::1']:
     lookup = lambda *args, **kw: [(socket.AF_INET6 if ':' in address else socket.AF_INET,
                                   socket.SOCK_STREAM, 6, '', (address, 443))]
@@ -96,7 +96,7 @@ for address in ['127.0.0.1', '10.0.0.1', '192.0.0.8', '192.0.0.9', '64:ff9b::a00
     except ValueError:
         accepted = False
     ipresults.append({'address':address, 'accepted_as_public':accepted})
-    if accepted != (address == '192.0.0.9'):
+    if accepted != (address in ('192.0.0.9', '192.0.0.10')):
         raise AssertionError('IP policy regression: '+address)
 print('IP_POLICY_AUDIT_JSON='+json.dumps({'python':sys.version.split()[0], 'results':ipresults,
                                        'actual_network_requests':0}))

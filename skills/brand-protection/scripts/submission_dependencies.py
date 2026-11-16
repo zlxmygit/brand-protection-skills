@@ -102,6 +102,7 @@ def resolve(case, action, targets, evidence, providers, root, index, read_file):
     # Process each node once; validate parent chains separately for cycles.
     pending = [('evidence', key) for key in sorted(evidence_ids)] + [('materials', key) for key in sorted(material_ids)]
     records, edges, verified = {}, {}, []
+    source_records = None
     total = 0
     while pending:
         section, key = pending.pop()
@@ -110,6 +111,22 @@ def resolve(case, action, targets, evidence, providers, root, index, read_file):
             continue
         if len(records) >= MAX_DEPENDENCIES:
             raise ValueError('Approval dependency limit exceeded')
+        if section == 'material_sources':
+            if source_records is None:
+                rows = case.get('material_sources', [])
+                if not isinstance(rows, list) or len(rows) > MAX_RECORDS:
+                    raise ValueError('material_sources: expected a bounded record list')
+                source_records = {}
+                for row in rows:
+                    if isinstance(row, dict) and isinstance(row.get('id'), str):
+                        source_records.setdefault(row['id'], []).append(row)
+            selected = source_records.get(key, [])
+            if len(selected) != 1:
+                raise ValueError('Missing or duplicate material source: ' + key)
+            row = selected[0]
+            check_identity(case, row, 'material source ' + key, scope)
+            records[node], edges[node] = row, []
+            continue
         source = evidence if section == 'evidence' else materials
         if key not in source:
             raise ValueError('Missing ' + section + ' dependency: ' + key)
@@ -131,6 +148,10 @@ def resolve(case, action, targets, evidence, providers, root, index, read_file):
             links.extend(('evidence', ref) for ref in references(row, field))
         for field in ('material_ids', 'authorization_material_ids'):
             links.extend(('materials', ref) for ref in references(row, field))
+        # Omission preserves legacy materials. Any explicit reference must
+        # resolve to one local source record, including its read/disclosure scope.
+        if section == 'materials' and 'source_id' in row:
+            links.append(('material_sources', identifier(row['source_id'], 'source_id')))
         edges[node] = links
         pending.extend(links)
     # Explicit iterative DFS also catches mixed material/evidence cycles.
@@ -153,4 +174,5 @@ def resolve(case, action, targets, evidence, providers, root, index, read_file):
             'allegations': allegations, 'observations': observations,
             'evidence': [records[node] for node in sorted(records) if node[0] == 'evidence'],
             'materials': [records[node] for node in sorted(records) if node[0] == 'materials'],
+            'material_sources': [records[node] for node in sorted(records) if node[0] == 'material_sources'],
             'verified_files': sorted(verified, key=lambda row: (row['section'], row['id']))}

@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "adapter": "local_file",
+  "enabled": false,
+  "private": {
+    "root": null,
+    "case": null,
+    "request": null
+  },
+  "follow_up_host_adapter": {
+    "version": "1.0",
+    "status": "disabled",
+    "authorization_source": null,
+    "expected_interval_hours": null,
+    "grace_hours": null
+  },
+  "request": {
+    "version": "1.0",
+    "expected_revision": null,
+    "run": {
+      "id": null,
+      "kind": null,
+      "scheduler_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "source_read_results": [],
+      "errors": []
+    },
+    "feedback_batches": [],
+    "records": {}
+  }
+}

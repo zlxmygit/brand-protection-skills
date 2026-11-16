@@ -67,6 +67,10 @@ python3 scripts/investigation.py --case /path/to/private-case/case-record.json
 
 工具把无行为线索的注册域名列为观察项。有具体行为线索时，工具要求复核证据。品牌自有或已授权资产出现异常线索时，工具要求检查该资产，防止把已知资产的异常直接排除。
 
+具体线索包括 `copied_content`、`impersonation` 和 `credential_collection`。当前记录含这些线索时，注册状态为 `unknown` 或 `not_found` 也会要求复核证据。输出为 `next_step: review_evidence`，线索必须引用本案有效证据。注册信息仍需核查，输出保留原 `registration` 值，并增加 `registration_review_required: true`。该字段只提示注册待核，不授予投诉权限。
+
+没有上述具体线索时，未知或未查到的注册状态继续要求 `verify_registration`。过期或未知时效的记录先要求 `refresh_source`；失败来源先要求 `retry_source`，且不能保留本轮新断言。品牌自有或已授权资产继续使用原有检查规则。`next_step` 的字段名、类型和已有值保持兼容。
+
 未知、过期或失败的来源不会生成“目标安全”的结论。输出始终包含 `authorizes_submission: false`。有效记录也不能直接触发投诉。
 
 坏记录单独报错。同类记录的重复 ID 全部隔离。未引用的有效结果仍保留。输入文件支持 UTF-8 和字节顺序标记（BOM）；重复 JSON 键、非有限数字和超过 8 MiB 的文件会报错。

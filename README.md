@@ -51,6 +51,8 @@ macOS、Windows 和 Linux 使用同一个安装包。脚本仅使用 Python 标�
 | 起草通知和补救材料 | [投诉模板](skills/brand-protection/assets/complaint-templates.md) | 独立草稿、补证、更正及撤回 |
 | 查询、取证和本地校验 | [辅助工具索引](skills/brand-protection/references/tools.md) | 调查格式、RDAP、公开网页取证和只读队列 |
 | 跟进已提交事项 | [持续跟进](skills/brand-protection/references/follow-up.md) | 回执、反馈、期限、补证、效果复查和恢复 |
+| 接入私有运行环境 | [宿主适配协议](skills/brand-protection/references/host-adapter.md) | 本地互斥、原子写回、反馈分页与运行健康检查 |
+| 演练异常流程 | [合成场景](skills/brand-protection/references/worked-examples.md) | 材料未齐、送达不明、更正及结案后观察 |
 
 低价、相似域名和未授权销售不能单独证明售假。版权、商标、假货、专利和设计分别举证。CDN、注册商与源站的处理能力不同；不能向所有接收方群发同一份 DMCA。
 
@@ -65,6 +67,7 @@ macOS、Windows 和 Linux 使用同一个安装包。脚本仅使用 Python 标�
 ```bash
 python3 skills/brand-protection/scripts/followup_queue.py --case "/path/to/private-case/case-record.json"
 python3 skills/brand-protection/scripts/investigation.py --case "/path/to/private-case/case-record.json"
+python3 skills/brand-protection/scripts/followup_queue.py --case "/path/to/private-case/case-record.json" --validate-only
 ```
 
 Windows 可在 PowerShell 使用 `py -3.13` 替换 `python3`，并将案件参数换成真实的本地路径。路径含空格时保留引号；不要将运行目录当作案件保存目录。
@@ -73,6 +76,8 @@ Windows 可在 PowerShell 使用 `py -3.13` 替换 `python3`，并将案件参�
 
 联网查询和网页取证需要明确网络权限。取证工具只向显式指定的私有目录写入证据，不修改案件。各工具的输入、错误处理和限制见辅助工具索引。
 
+需要保存 RDAP 原始响应时，显式传入 `--archive-root`，原始字节和哈希保存在仓库外。网页取证 CLI 的 `--total-timeout` 默认 30 秒，覆盖采集子进程、DNS、跳转和结果回传；不包括最终文件持久化。
+
 ## 持续跟进
 
 跟进需明确启用，并指定案件、周期、反馈源和授权范围。运营起点在[跟进策略](skills/brand-protection/assets/follow-up-policy.json)中：每 6 小时查反馈，每天复查目标，首次无回应跟进评估为确认送达后 72 小时。后续周期服从真实通知和服务商规则。
@@ -80,6 +85,10 @@ Windows 可在 PowerShell 使用 `py -3.13` 替换 `python3`，并将案件参�
 这些时间不是法律期限或发送许可。反馈不可读、分页不完整和权限失效不能解释为“对方没回复”。未知送达先核对；租约过期不证明旧实例已经结束。
 
 定时运行必须核验真实执行和写回。只有配置、没有运行证据时，应报告未验证。独立失联告警需要独立的观察来源；同一设备上的另一个任务不能证明设备失联后仍能告警。
+
+结案不自动终止仍获授权的复发观察。用 `recurrence_observations` 单独记录授权、周期、状态和下次复查点；暂停或结束后不会自动重启。调查阶段可用目标级只读任务覆盖下一步，无需先建立投诉行动。
+
+可选本地宿主适配器提供真实 OS 文件锁、修订号比较和原子写回。反馈接入按来源、账号、线程及完整分页校验，消息状态与游标同次提交。它不连接邮箱、不创建调度器，也不发送投诉。具体接口、授权和验证限制见[宿主适配协议](skills/brand-protection/references/host-adapter.md)。
 
 ## 隐私与授权
 
@@ -91,7 +100,7 @@ Windows 可在 PowerShell 使用 `py -3.13` 替换 `python3`，并将案件参�
 
 ## 测试与发布
 
-v1.8.3 补齐三个系统的原生验证。升级仍需遵守[审计修复要求](skills/brand-protection/references/audit-fixes.md)和[权利范围与证据父链说明](skills/brand-protection/references/residual-fixes.md)，不能自动更新旧审批哈希。
+v1.8.4 修复 v1.8.3 审计发现，并补充私有运行环境适配。提交审批快照升级为 `1.2`：来源授权或披露限制变化会使旧审批失效，所有旧审批均须重新核对，不能自动替换旧哈希。案件格式保持 `1.3`，新增观察等字段可选，不自动迁移私有案件。详见[本版更新](docs/releases/v1.8.4.md)，既有[审计修复要求](skills/brand-protection/references/audit-fixes.md)和[权利范围与证据父链说明](skills/brand-protection/references/residual-fixes.md)继续适用。
 
 在仓库根目录运行：
 
@@ -101,9 +110,9 @@ python3 -B -m unittest discover -s tests -v
 
 Windows 对应命令为 `py -3.13 -B -m unittest discover -s tests -v`。原有回归、1,120 次队列字段变异和 4,440 个跨模块变体继续保留。当前数量和结果以对应提交的 [GitHub Actions](https://github.com/zlxmygit/brand-protection-skills/actions)为准；平台专属跳过项不计作通过。
 
-每次只交付一项新增能力。PR 测试通过后合并；主分支再验证源码、解压安装包和本版要求的公开接口。发布矩阵分别在两种 Mac、Windows 和两种 Ubuntu 上检查解压包。上传到草稿 Release 后重新下载核对，全部通过才公开发布。
+常规迭代每次交付一项新增能力；本版按仓库所有者要求统一完成审计修复。PR 测试通过后合并，主分支再验证源码、解压安装包和本版要求的公开接口。发布矩阵在两种 Mac、Windows 和两种 Ubuntu 上检查解压包及实际复制安装命令。脚本入口和资源发现检查不等于各宿主应用已实际加载。上传到草稿 Release 后重新下载核对，全部通过才公开发布。
 
-发布包只含[白名单文件](release/skill-files.json)。每版提供 `INSTALL.md`、`VALIDATION.json`、`PACKAGE-MANIFEST.json` 和 `SHA256SUMS.txt`。测试不证明真实投诉、法律结论或后台调度已经验收。
+发布包只含[白名单文件](release/skill-files.json)。本版另提供 `INSTALL.md`、`VALIDATION.json`、`PACKAGE-MANIFEST.json`、`RELEASE-NOTES.md` 和 `SHA256SUMS.txt`。测试不证明真实投诉、法律结论或后台调度已经验收。
 
 ## 文档与维护
 

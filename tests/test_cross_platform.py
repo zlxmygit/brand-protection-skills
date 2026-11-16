@@ -181,8 +181,10 @@ class PortablePaths(unittest.TestCase):
         for alias, target in paths.SYSTEM_ALIASES.items():
             self.assertTrue(Path(alias).is_symlink())
             self.assertEqual(Path(alias).resolve(), Path(target))
-            # /var/folders or /tmp are writable; no changes to system aliases.
-            parent = '/tmp' if alias == '/tmp' else tempfile.gettempdir()
+            # Both parents are controlled system-alias paths; TMPDIR may point elsewhere.
+            parent = '/tmp' if alias == '/tmp' else '/var/tmp'
+            self.assertTrue(Path(parent).is_dir())
+            self.assertTrue(Path(parent).resolve().is_relative_to(target))
             with tempfile.TemporaryDirectory(dir=parent) as directory:
                 canonical = Path(directory).resolve()
                 supplied = Path(alias)/canonical.relative_to(target)
