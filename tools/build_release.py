@@ -252,15 +252,6 @@ def main():
     install_text = inputs['docs/installation.md'].decode('utf-8').replace('{{tag}}', tag)
     write_utf8(out/'INSTALL.md', install_text)
     notes = inputs['docs/releases/'+tag+'.md'].decode('utf-8')
-    notes += '\n## 发布构建验证\n\n'
-    notes += f'源码提交：`{source}`。本构建在 {platform.system()} / {platform.machine()} / Python {platform.python_version()} 执行。\n\n'
-    notes += (f'源码与解压包各发现 {source_result["discovered"]} 项测试，'
-              f'各通过 {source_result["passed"]} 项，跳过 {source_result["skipped"]} 项平台专属测试。'
-              '其他原生系统的执行结果见同提交的 GitHub Actions 任务，不能把跳过项计作通过。\n\n')
-    notes += f'安装包包含 {len(files)} 个文件。案件模板为空，持续跟进默认关闭。逐文件哈希见 `PACKAGE-MANIFEST.json`。\n\n'
-    notes += (f'本构建核对 {templates_checked} 份通用 assets 文件，并实际执行原生解压和复制安装。'
-              '已逐文件核对安装字节、解析入口并运行 Python；宿主应用中的发现和加载仍未验收。\n\n')
-    notes += '回归测试使用合成数据。已执行的公开接口检查见 `VALIDATION.json`。实际反馈读取、外发和定时运行需要在部署环境验收。\n'
     write_utf8(out/'RELEASE-NOTES.md', notes)
     shipped = [package.name, 'INSTALL.md', 'PACKAGE-MANIFEST.json', 'VALIDATION.json', 'RELEASE-NOTES.md']
     write_utf8(out/'SHA256SUMS.txt', ''.join(sha256((out/name).read_bytes())+'  '+name+'\n' for name in shipped))

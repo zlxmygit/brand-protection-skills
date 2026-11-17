@@ -114,6 +114,8 @@ class CommittedReleaseInputs(unittest.TestCase):
                 self.assertEqual(validation['source_inputs'][name], expected)
         self.assertTrue(validation['native_installation']['passed'])
         self.assertFalse(validation['native_installation']['host_runtime_loaded'])
+        self.assertEqual((self.root/'dist/RELEASE-NOTES.md').read_bytes(),
+                         self.git('show', 'HEAD:docs/releases/v1.8.4.md'))
         self.assertEqual(preflight.local_release(manifest['source_commit'], self.root)['tag'], 'v1.8.4')
 
     def test_source_change_while_tests_run_is_rejected(self):

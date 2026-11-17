@@ -112,7 +112,7 @@ def local_release(source, root=None):
     if (out/'INSTALL.md').read_bytes() != install:
         raise ValueError('INSTALL sidecar differs from fixed source')
     notes = inputs['docs/releases/'+tag+'.md']
-    if not (out/'RELEASE-NOTES.md').read_bytes().startswith(notes+b'\n## '):
+    if (out/'RELEASE-NOTES.md').read_bytes() != notes:
         raise ValueError('release notes sidecar differs from fixed source')
     shipped = {'brand-protection-'+tag+'.zip', 'INSTALL.md', 'PACKAGE-MANIFEST.json',
                'VALIDATION.json', 'RELEASE-NOTES.md'}
